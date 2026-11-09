@@ -21,15 +21,16 @@ class AmountFormatterTest {
     }
 
     @Test
-    fun `keeps three decimals for odd amount`() {
-        assertEquals("12.345", AmountFormatter.thousands(12_345))
+    fun `rounds odd amount to two decimals`() {
+        assertEquals("12.35", AmountFormatter.thousands(12_345))
+        assertEquals("12.34", AmountFormatter.thousands(12_344))
+        assertEquals("12.36", AmountFormatter.thousands(12_355))
     }
 
     @Test
     fun `formats sub thousand amount`() {
         assertEquals("0.5", AmountFormatter.thousands(500))
-        assertEquals("0.001", AmountFormatter.thousands(1))
-        assertEquals("0.999", AmountFormatter.thousands(999))
+        assertEquals("0.1", AmountFormatter.thousands(100))
     }
 
     @Test
