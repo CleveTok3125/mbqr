@@ -4,7 +4,8 @@ Android QR scanner that hands a VietQR transfer to the MB Bank app.
 
 ## What it does
 
-1. Scans a VietQR (NAPAS EMVCo) code with CameraX and ZXing.
+1. Scans a VietQR (NAPAS EMVCo) code with CameraX and ZXing from the camera,
+   a full-resolution capture, or a gallery image.
 2. Builds the text that the MB transfer hub understands:
    `MB <account> <amount in thousands> [recipient name]`.
 3. Copies that text to the clipboard and opens `mbbank://?ad_dp=transfer`.
@@ -13,6 +14,8 @@ Android QR scanner that hands a VietQR transfer to the MB Bank app.
 
 ## Demo
 
+Screenshot from demo mode, with the system status bar hidden:
+
 <p>
   <img src="docs/scanner.png" alt="Scanner screen" width="320">
 </p>
@@ -20,8 +23,7 @@ Android QR scanner that hands a VietQR transfer to the MB Bank app.
 ## Supported input
 
 - VietQR payloads with the NAPAS provider (`A000000727`).
-- VND currency only. Amounts below 5 VND are rejected because the hub reads at
-  most two decimal places of the thousands value.
+- VND currency only. Amounts below 5 VND are rejected.
 - MB Bank BIN `970422`. Other BINs are shown as a raw payload with a copy
   button instead of being handed off.
 
@@ -71,15 +73,24 @@ Required repository secrets:
 - Enabling `publish` on a manual run creates a release tagged
   `smoke-<run-number>`.
 
+## Controls
+
+- **Thông tin**: app credits, version, source, and license.
+- **Đèn**: torch. **Ảnh**: scan an image from the gallery.
+- **Arc dial**: CameraX zoom. Drags below the arc are mirrored. Haptics tick at
+  minor marks and stronger at `1x/2x/4x/8x`.
+- **Shutter**: full-resolution capture for distant codes.
+- **Clipboard pill**: tap to copy the last text again and restart the 60-second
+  timer; long-press to clear the app-managed entry immediately.
+
 ## Behavior notes
 
 - Scanning starts as soon as camera permission is granted.
-- Drag the arc dial to zoom. The shutter captures a full-resolution photo and
-  decodes it, which extends the usable distance beyond the preview stream.
 - Raw payloads that are not a supported VietQR can be copied, shared, or
   opened in a browser when the content is a plain HTTP(S) URL.
-- Demo mode hides the system status bar. Tap the version line five times in
-  the credits dialog to toggle it.
+- Demo mode: tap the version line five times in the credits dialog. It hides
+  the system status bar, shows the full controls over a static background, and
+  loops the clipboard countdown. The gallery button only shows a demo message.
 - The amount is rounded to two decimal places of the thousands value.
 - After a successful handoff the camera stops and a clipboard countdown is
   shown; tap **Quét mã khác** to scan another code.
