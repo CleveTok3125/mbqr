@@ -87,7 +87,7 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
         val height = image.height
         if (width <= 0 || height <= 0) return null
 
-        val luminance = extractLuminance(image, width, height, plane)
+        val luminance = extractLuminance(width, height, plane)
         val source = PlanarYUVLuminanceSource(luminance, width, height, 0, 0, width, height, false)
 
         // QR detection is rotation independent; skipping the rotation copy keeps
@@ -110,7 +110,6 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
     }
 
     private fun extractLuminance(
-        image: ImageProxy,
         width: Int,
         height: Int,
         plane: ImageProxy.PlaneProxy,
