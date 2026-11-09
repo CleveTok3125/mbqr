@@ -16,29 +16,39 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -60,16 +70,20 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import vn.io.elsutm.mbqr.BuildConfig
 import vn.io.elsutm.mbqr.R
 import vn.io.elsutm.mbqr.camera.PhotoQrDecoder
 import vn.io.elsutm.mbqr.handoff.ClipboardHandoff
@@ -100,6 +114,7 @@ fun ScannerScreen() {
     var sheetReason by rememberSaveable { mutableStateOf("") }
     var clipboardExpiresAt by rememberSaveable { mutableStateOf(0L) }
     var clipboardRemaining by rememberSaveable { mutableStateOf(0) }
+    var showInfo by rememberSaveable { mutableStateOf(false) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var zoomMin by remember { mutableStateOf(1f) }
@@ -218,8 +233,14 @@ fun ScannerScreen() {
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.navigationBarsPadding(),
+            )
+        },
         containerColor = Color.Black,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
     ) { padding ->
         Box(
             modifier = Modifier
@@ -252,47 +273,73 @@ fun ScannerScreen() {
                 )
 
                 else -> {
-                    key(cameraAttempt) {
-                        CameraPreview(
-                            modifier = Modifier.fillMaxSize(),
+                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                        val statusTop = WindowInsets.statusBars
+                            .asPaddingValues()
+                            .calculateTopPadding()
+                        val navigationBottom = WindowInsets.navigationBars
+                            .asPaddingValues()
+                            .calculateBottomPadding()
+                        val topBarHeight = statusTop + 64.dp
+                        val controlsHeight = if (camera != null) 190.dp else 0.dp
+                        val bottom = maxHeight - navigationBottom
+                        val availableHeight = (bottom - topBarHeight - controlsHeight)
+                            .coerceAtLeast(120.dp)
+                        val frameSize = minOf(
+                            maxWidth * 0.72f,
+                            260.dp,
+                            availableHeight * 0.55f,
+                        ).coerceAtLeast(140.dp)
+                        val frameCenterY = maxHeight / 2f - maxHeight * 0.05f
+                        val frameBottom = frameCenterY + frameSize / 2f
+                        val availableBelowFrame = (bottom - frameBottom).coerceAtLeast(0.dp)
+                        val controlsMargin = ((availableBelowFrame - 190.dp) / 2f)
+                            .coerceAtLeast(16.dp)
+
+                        key(cameraAttempt) {
+                            CameraPreview(
+                                modifier = Modifier.fillMaxSize(),
+                                torchOn = torchOn,
+                                scanningEnabled = scanningEnabled,
+                                onDecoded = ::handleDecoded,
+                                onCameraError = { message -> cameraError = message },
+                                onCameraBound = { camera = it },
+                                onImageCaptureBound = { imageCapture = it },
+                                onZoomStateChanged = { state ->
+                                    zoomMin = state.minZoomRatio
+                                    zoomMax = state.maxZoomRatio
+                                    zoomRatio = state.zoomRatio
+                                },
+                            )
+                        }
+
+                        ScannerOverlay(
                             torchOn = torchOn,
-                            scanningEnabled = scanningEnabled,
-                            onDecoded = ::handleDecoded,
-                            onCameraError = { message -> cameraError = message },
-                            onCameraBound = { camera = it },
-                            onImageCaptureBound = { imageCapture = it },
-                            onZoomStateChanged = { state ->
-                                zoomMin = state.minZoomRatio
-                                zoomMax = state.maxZoomRatio
-                                zoomRatio = state.zoomRatio
-                            },
+                            onToggleTorch = { torchOn = !torchOn },
+                            clipboardRemaining = clipboardRemaining,
+                            frameSize = frameSize,
+                            frameOffsetY = -maxHeight * 0.05f,
+                            onShowInfo = { showInfo = true },
                         )
-                    }
 
-                    ScannerOverlay(
-                        torchOn = torchOn,
-                        onToggleTorch = { torchOn = !torchOn },
-                        clipboardRemaining = clipboardRemaining,
-                        showBottomInfo = camera == null,
-                    )
-
-                    if (camera != null) {
-                        CameraControls(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .navigationBarsPadding()
-                                .padding(bottom = 24.dp),
-                            zoomRatio = zoomRatio,
-                            minZoom = zoomMin,
-                            maxZoom = zoomMax,
-                            isCapturing = isCapturing,
-                            showCapture = imageCapture != null,
-                            onZoomChange = { ratio ->
-                                zoomRatio = ratio
-                                camera?.cameraControl?.setZoomRatio(ratio)
-                            },
-                            onCapture = ::capturePhoto,
-                        )
+                        if (camera != null) {
+                            CameraControls(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .navigationBarsPadding()
+                                    .padding(bottom = controlsMargin),
+                                zoomRatio = zoomRatio,
+                                minZoom = zoomMin,
+                                maxZoom = zoomMax,
+                                isCapturing = isCapturing,
+                                showCapture = imageCapture != null,
+                                onZoomChange = { ratio ->
+                                    zoomRatio = ratio
+                                    camera?.cameraControl?.setZoomRatio(ratio)
+                                },
+                                onCapture = ::capturePhoto,
+                            )
+                        }
                     }
                 }
             }
@@ -432,30 +479,139 @@ fun ScannerScreen() {
             }
         }
     }
+
+    if (showInfo) {
+        val uriHandler = LocalUriHandler.current
+        AlertDialog(
+            onDismissRequest = { showInfo = false },
+            text = {
+                CreditsContent(
+                    version = BuildConfig.VERSION_NAME,
+                    onOpenSource = { uriHandler.openUri(SOURCE_URL) },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showInfo = false }) {
+                    Text("Đóng")
+                }
+            },
+        )
+    }
 }
+
+@Composable
+private fun CreditsContent(
+    version: String,
+    onOpenSource: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                    contentDescription = null,
+                    modifier = Modifier.size(34.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column {
+                Text(text = "MBQR", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "Phiên bản $version",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+        CreditItem(label = "Tác giả", value = "CleveTok3125")
+        CreditItem(
+            label = "Mã nguồn",
+            value = "github.com/CleveTok3125/mbqr",
+            onClick = onOpenSource,
+        )
+        CreditItem(label = "Giấy phép", value = "GPL-3.0")
+    }
+}
+
+@Composable
+private fun CreditItem(
+    label: String,
+    value: String,
+    onClick: (() -> Unit)? = null,
+) {
+    Column {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (onClick != null) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            modifier = if (onClick != null) {
+                Modifier.clickable(onClick = onClick)
+            } else {
+                Modifier
+            },
+        )
+    }
+}
+
+private const val SOURCE_URL = "https://github.com/CleveTok3125/mbqr"
 
 @Composable
 private fun ScannerOverlay(
     torchOn: Boolean,
     onToggleTorch: () -> Unit,
     clipboardRemaining: Int,
-    showBottomInfo: Boolean,
+    frameSize: Dp,
+    frameOffsetY: Dp,
+    onShowInfo: () -> Unit,
 ) {
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
     Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(statusTop)
+                .background(Color.Black.copy(alpha = 0.45f)),
+        )
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.45f))
                 .statusBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "Quét VietQR",
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-            )
+            FilledTonalButton(
+                onClick = onShowInfo,
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = Color.Black.copy(alpha = 0.45f),
+                    contentColor = Color.White,
+                ),
+                contentPadding = PaddingValues(horizontal = 14.dp),
+            ) {
+                Text("Thông tin")
+            }
+
             FilledTonalButton(
                 onClick = onToggleTorch,
                 colors = ButtonDefaults.filledTonalButtonColors(
@@ -479,7 +635,8 @@ private fun ScannerOverlay(
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .size(260.dp)
+                .offset(y = frameOffsetY)
+                .size(frameSize)
                 .border(
                     width = 3.dp,
                     color = MaterialTheme.colorScheme.primary,
@@ -487,29 +644,21 @@ private fun ScannerOverlay(
                 ),
         )
 
-        if (showBottomInfo) {
-            Column(
+        if (clipboardRemaining > 0) {
+            Text(
+                text = "Clipboard còn ${clipboardRemaining}s",
+                color = Color.White,
+                style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                if (clipboardRemaining > 0) {
-                    Text(
-                        text = "Clipboard tự xoá sau ${clipboardRemaining}s",
-                        color = Color.White.copy(alpha = 0.75f),
-                        style = MaterialTheme.typography.bodySmall,
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 68.dp)
+                    .background(
+                        color = Color.Black.copy(alpha = 0.45f),
+                        shape = RoundedCornerShape(50),
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
-                }
-                Text(
-                    text = "Đưa mã vào khung",
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                )
-            }
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
         }
     }
 }
