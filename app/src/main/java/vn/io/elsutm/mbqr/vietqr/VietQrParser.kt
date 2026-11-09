@@ -62,7 +62,8 @@ object VietQrParser {
             ?: return VietQrParseResult.NotVietQr
 
         val amount = fields.value("54")?.let { text ->
-            text.toLongOrNull()?.takeIf { it > 0 } ?: return VietQrParseResult.NotVietQr
+            text.toLongOrNull()?.takeIf { it >= MIN_AMOUNT_VND }
+                ?: return VietQrParseResult.NotVietQr
         }
 
         val data = VietQrData(
@@ -90,6 +91,10 @@ object VietQrParser {
 
     private fun List<Tlv>.value(tag: String): String? =
         firstOrNull { it.tag == tag }?.value
+
+    // The hub reads two decimal places of the thousands value, so anything below
+    // 5 VND rounds down to zero and cannot be transferred.
+    private const val MIN_AMOUNT_VND = 5L
 
     private const val CRC_TAG = "63"
     private const val CRC_LENGTH = 4

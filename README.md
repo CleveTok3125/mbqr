@@ -19,7 +19,8 @@ must be entered manually.
 ## Supported input
 
 - VietQR payloads with the NAPAS provider (`A000000727`).
-- VND currency only.
+- VND currency only. Amounts below 5 VND are rejected because the hub reads at
+  most two decimal places of the thousands value.
 - MB Bank BIN `970422`. Other BINs are shown as a raw payload with a copy
   button instead of being handed off.
 

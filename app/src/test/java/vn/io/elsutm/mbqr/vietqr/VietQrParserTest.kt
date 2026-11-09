@@ -87,6 +87,21 @@ class VietQrParserTest {
         assertEquals(VietQrParseResult.NotVietQr, VietQrParser.parse(payload))
     }
 
+    @Test
+    fun `rejects amount that rounds to zero`() {
+        val payload = buildPayload(amount = "4")
+
+        assertEquals(VietQrParseResult.NotVietQr, VietQrParser.parse(payload))
+    }
+
+    @Test
+    fun `accepts smallest representable amount`() {
+        val payload = buildPayload(amount = "5")
+        val data = (VietQrParser.parse(payload) as VietQrParseResult.VietQr).data
+
+        assertEquals(5L, data.amountVnd)
+    }
+
     private fun buildPayload(
         guid: String = "A000000727",
         currency: String = "704",

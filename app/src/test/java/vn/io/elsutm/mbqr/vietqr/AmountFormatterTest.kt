@@ -34,6 +34,11 @@ class AmountFormatterTest {
     }
 
     @Test
+    fun `rounds smallest amount to ten vnd`() {
+        assertEquals("0.01", AmountFormatter.thousands(5))
+    }
+
+    @Test
     fun `formats millions`() {
         assertEquals("1000.0", AmountFormatter.thousands(1_000_000))
     }
