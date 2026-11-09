@@ -14,6 +14,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,12 +25,16 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -53,12 +58,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import vn.io.elsutm.mbqr.R
 import vn.io.elsutm.mbqr.handoff.ClipboardHandoff
 import vn.io.elsutm.mbqr.handoff.MbLauncher
 import vn.io.elsutm.mbqr.handoff.QrActions
@@ -241,9 +248,15 @@ fun ScannerScreen() {
                         },
                         modifier = Modifier.weight(1f),
                     ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_copy),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text("Sao chép")
                     }
-                    OutlinedButton(
+                    FilledTonalButton(
                         onClick = {
                             if (!QrActions.shareText(context, raw)) {
                                 Toast.makeText(
@@ -255,6 +268,12 @@ fun ScannerScreen() {
                         },
                         modifier = Modifier.weight(1f),
                     ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_share),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text("Chia sẻ")
                     }
                 }
@@ -264,7 +283,7 @@ fun ScannerScreen() {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        OutlinedButton(
+                        FilledTonalButton(
                             onClick = {
                                 if (!QrActions.openHttpUrl(context, raw)) {
                                     Toast.makeText(
@@ -275,7 +294,17 @@ fun ScannerScreen() {
                                 }
                             },
                             modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ),
                         ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_open_in_new),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text("Mở liên kết")
                         }
                         OutlinedButton(
@@ -285,6 +314,12 @@ fun ScannerScreen() {
                             },
                             modifier = Modifier.weight(1f),
                         ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_arrow_forward),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text("Quét tiếp")
                         }
                     }
@@ -296,6 +331,12 @@ fun ScannerScreen() {
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_arrow_forward),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text("Quét tiếp")
                     }
                 }
@@ -325,11 +366,23 @@ private fun ScannerOverlay(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onToggleTorch) {
-                Text(
-                    text = if (torchOn) "Tắt đèn" else "Bật đèn",
-                    color = Color.White,
+            FilledTonalButton(
+                onClick = onToggleTorch,
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = if (torchOn) TorchOnContainer else Color.Black.copy(alpha = 0.45f),
+                    contentColor = if (torchOn) TorchOnContent else Color.White,
+                ),
+                contentPadding = PaddingValues(horizontal = 12.dp),
+            ) {
+                Icon(
+                    painter = painterResource(
+                        if (torchOn) R.drawable.ic_flash_off else R.drawable.ic_flash_on,
+                    ),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
                 )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(text = if (torchOn) "Tắt đèn" else "Bật đèn")
             }
         }
 
@@ -400,6 +453,12 @@ private fun PausedContent(
         )
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = onScanAgain) {
+            Icon(
+                painter = painterResource(R.drawable.ic_arrow_forward),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
             Text("Quét mã khác")
         }
     }
@@ -432,6 +491,12 @@ private fun CameraErrorContent(
         )
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = onRetry) {
+            Icon(
+                painter = painterResource(R.drawable.ic_refresh),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
             Text("Thử lại")
         }
     }
@@ -471,6 +536,9 @@ private fun PermissionContent(
         }
     }
 }
+
+private val TorchOnContainer = Color(0xFFFFC107)
+private val TorchOnContent = Color(0xFF1B1B1B)
 
 private fun hasCameraPermission(context: android.content.Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
