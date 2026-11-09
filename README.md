@@ -78,6 +78,8 @@ Required repository secrets:
   decodes it, which extends the usable distance beyond the preview stream.
 - Raw payloads that are not a supported VietQR can be copied, shared, or
   opened in a browser when the content is a plain HTTP(S) URL.
+- Demo mode hides the system status bar. Tap the version line five times in
+  the credits dialog to toggle it.
 - The amount is rounded to two decimal places of the thousands value.
 - After a successful handoff the camera stops and a clipboard countdown is
   shown; tap **Quét mã khác** to scan another code.
