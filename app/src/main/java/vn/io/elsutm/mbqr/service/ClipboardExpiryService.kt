@@ -14,6 +14,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -30,6 +31,7 @@ class ClipboardExpiryService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var expectedText: String? = null
+    private var expiryJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -45,10 +47,13 @@ class ClipboardExpiryService : Service() {
             return START_NOT_STICKY
         }
 
+        // A new handoff restarts the window instead of letting an older timer
+        // clear the clipboard early.
+        expiryJob?.cancel()
         expectedText = text
         startInForeground()
 
-        scope.launch {
+        expiryJob = scope.launch {
             delay(EXPIRY_MILLIS)
             clearAndStop()
         }
@@ -57,6 +62,7 @@ class ClipboardExpiryService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        expiryJob?.cancel()
         clearAndStop()
         super.onTaskRemoved(rootIntent)
     }
