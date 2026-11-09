@@ -1,5 +1,6 @@
 package vn.io.elsutm.mbqr.ui
 
+import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlin.math.atan2
@@ -77,13 +79,17 @@ private fun ShutterButton(
     onCapture: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val view = LocalView.current
     Box(
         modifier = modifier
             .size(68.dp)
             .clip(CircleShape)
             .border(4.dp, Color.White, CircleShape)
             .background(Color.White.copy(alpha = 0.18f))
-            .clickable(enabled = !isCapturing, onClick = onCapture),
+            .clickable(enabled = !isCapturing) {
+                view.performHapticFeedback(HAPTIC_MAJOR)
+                onCapture()
+            },
         contentAlignment = Alignment.Center,
     ) {
         if (isCapturing) {
@@ -114,6 +120,7 @@ private fun ZoomDial(
     val enabled = maxZoom > minZoom
     val trackColor = Color.White.copy(alpha = 0.35f)
     val primaryColor = MaterialTheme.colorScheme.primary
+    val view = LocalView.current
 
     Box(
         modifier = modifier,
@@ -123,32 +130,59 @@ private fun ZoomDial(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(190.dp)
-                .pointerInput(minZoom, maxZoom) {
+                .pointerInput(minZoom, maxZoom, enabled) {
                     if (!enabled) return@pointerInput
 
                     val pivotFromBottomPx = PIVOT_FROM_BOTTOM.toPx()
+                    val ticks = dialTicks(minZoom, maxZoom)
+                    val arcStart = ZoomMapping.START_ANGLE
+                    val arcEnd = arcStart + ZoomMapping.SWEEP_ANGLE
+
                     awaitEachGesture {
                         val down = awaitFirstDown()
-                        updateZoomFromPointer(
-                            size,
-                            down.position,
-                            pivotFromBottomPx,
-                            minZoom,
-                            maxZoom,
-                            onZoomChange,
-                        )
+                        val downAngle = mappedAngle(size, down.position, pivotFromBottomPx)
+                        var lastAngle: Float? = null
+
+                        if (downAngle in arcStart..arcEnd) {
+                            view.performHapticFeedback(HAPTIC_MAJOR)
+                            lastAngle = downAngle
+                        }
+                        onZoomChange(ZoomMapping.ratioForAngle(downAngle, minZoom, maxZoom))
 
                         do {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull() ?: break
-                            updateZoomFromPointer(
-                                size,
-                                change.position,
-                                pivotFromBottomPx,
-                                minZoom,
-                                maxZoom,
-                                onZoomChange,
-                            )
+                            val angle = mappedAngle(size, change.position, pivotFromBottomPx)
+
+                            if (angle !in arcStart..arcEnd) {
+                                // Gaps beside the arc clamp the thumb but stay silent.
+                                lastAngle = null
+                                onZoomChange(
+                                    ZoomMapping.ratioForAngle(angle, minZoom, maxZoom),
+                                )
+                                change.consume()
+                                continue
+                            }
+
+                            val previous = lastAngle
+                            if (previous == null) {
+                                lastAngle = angle
+                                onZoomChange(
+                                    ZoomMapping.ratioForAngle(angle, minZoom, maxZoom),
+                                )
+                                change.consume()
+                                continue
+                            }
+
+                            val crossed = strongestCrossedTick(previous, angle, ticks)
+                            if (crossed != null) {
+                                view.performHapticFeedback(
+                                    if (crossed.major) HAPTIC_MAJOR else HAPTIC_MINOR,
+                                )
+                            }
+
+                            lastAngle = angle
+                            onZoomChange(ZoomMapping.ratioForAngle(angle, minZoom, maxZoom))
                             change.consume()
                         } while (event.changes.any { it.pressed })
                     }
@@ -248,14 +282,11 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRadialTick(
     )
 }
 
-private fun updateZoomFromPointer(
+private fun pointerAngle(
     size: IntSize,
     position: Offset,
     pivotFromBottomPx: Float,
-    minZoom: Float,
-    maxZoom: Float,
-    onZoomChange: (Float) -> Unit,
-) {
+): Float {
     val centerX = size.width / 2f
     val centerY = size.height - pivotFromBottomPx
 
@@ -263,8 +294,48 @@ private fun updateZoomFromPointer(
         atan2(position.y - centerY, position.x - centerX).toDouble(),
     ).toFloat()
     if (degrees < 0f) degrees += 360f
+    return degrees
+}
 
-    onZoomChange(ZoomMapping.ratioForAngle(degrees, minZoom, maxZoom))
+private fun mappedAngle(
+    size: IntSize,
+    position: Offset,
+    pivotFromBottomPx: Float,
+): Float {
+    val raw = pointerAngle(size, position, pivotFromBottomPx)
+    val centerY = size.height - pivotFromBottomPx
+    return if (position.y > centerY) 360f - raw else raw
+}
+
+private data class DialTick(val angle: Float, val major: Boolean)
+
+private fun dialTicks(minZoom: Float, maxZoom: Float): List<DialTick> {
+    val ticks = mutableListOf<DialTick>()
+    var angle = ZoomMapping.START_ANGLE + MINOR_OFFSET_DEGREES
+    val end = ZoomMapping.START_ANGLE + ZoomMapping.SWEEP_ANGLE
+    while (angle < end) {
+        ticks += DialTick(angle, major = false)
+        angle += MINOR_STEP_DEGREES
+    }
+    zoomTicks(minZoom, maxZoom).forEach { ratio ->
+        ticks += DialTick(
+            angle = ZoomMapping.angleForRatio(ratio, minZoom, maxZoom),
+            major = true,
+        )
+    }
+    return ticks.sortedBy { it.angle }
+}
+
+private fun strongestCrossedTick(
+    previous: Float,
+    current: Float,
+    ticks: List<DialTick>,
+): DialTick? {
+    val low = min(previous, current)
+    val high = max(previous, current)
+    return ticks
+        .filter { it.angle > low && it.angle <= high }
+        .maxByOrNull { if (it.major) 1 else 0 }
 }
 
 private fun zoomTicks(minZoom: Float, maxZoom: Float): List<Float> {
@@ -281,3 +352,7 @@ private fun formatZoom(ratio: Float): String {
 }
 
 private val PIVOT_FROM_BOTTOM = 42.dp
+private val HAPTIC_MAJOR = HapticFeedbackConstants.CLOCK_TICK
+private val HAPTIC_MINOR = HapticFeedbackConstants.KEYBOARD_TAP
+private const val MINOR_STEP_DEGREES = 10f
+private const val MINOR_OFFSET_DEGREES = 7f

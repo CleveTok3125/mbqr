@@ -10,6 +10,7 @@ import android.graphics.ImageFormat
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -191,6 +192,9 @@ fun ScannerScreen() {
 
     fun handleDecoded(raw: String) {
         if (!scanningEnabled) return
+
+        // Any decoded QR is a scan success: either the sheet or the MB handoff follows.
+        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
 
         when (val result = VietQrParser.parse(raw)) {
             is VietQrParseResult.VietQr -> {
@@ -382,9 +386,17 @@ fun ScannerScreen() {
                             frameSize = frameSize,
                             frameOffsetY = -maxHeight * 0.05f,
                             showTorch = true,
-                            showImage = !demoMode,
+                            showImage = true,
                             onPickImage = {
-                                if (!demoMode) imagePicker.launch("image/*")
+                                if (demoMode) {
+                                    Toast.makeText(
+                                        context,
+                                        "Chế độ demo",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                } else {
+                                    imagePicker.launch("image/*")
+                                }
                             },
                             onShowInfo = { showInfo = true },
                         )
