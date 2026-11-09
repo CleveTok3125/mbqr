@@ -25,7 +25,12 @@ jobs:
           packages: platform-tools
 
       - name: Install SDK platform
-        run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+        run: |
+          if command -v android >/dev/null 2>&1; then
+            android sdk install platforms/android-37.0 build-tools/37.0.0
+          else
+            sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+          fi
 
       - name: Decode keystore
         env:
