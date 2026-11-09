@@ -22,6 +22,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -96,6 +97,7 @@ import vn.io.elsutm.mbqr.BuildConfig
 import vn.io.elsutm.mbqr.R
 import vn.io.elsutm.mbqr.camera.PhotoQrDecoder
 import vn.io.elsutm.mbqr.handoff.ClipboardHandoff
+import vn.io.elsutm.mbqr.handoff.ClipboardSession
 import vn.io.elsutm.mbqr.handoff.MbLauncher
 import vn.io.elsutm.mbqr.handoff.QrActions
 import vn.io.elsutm.mbqr.handoff.UrlDetector
@@ -123,8 +125,10 @@ fun ScannerScreen() {
     var sheetReason by rememberSaveable { mutableStateOf("") }
     var clipboardExpiresAt by rememberSaveable { mutableStateOf(0L) }
     var clipboardRemaining by rememberSaveable { mutableStateOf(0) }
+    var lastClipboardText by remember { mutableStateOf(ClipboardSession.text) }
     var showInfo by rememberSaveable { mutableStateOf(false) }
     var demoMode by remember { mutableStateOf(false) }
+    var demoCountdown by remember { mutableStateOf(60) }
     var versionTaps by remember { mutableStateOf(0) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
@@ -157,6 +161,15 @@ fun ScannerScreen() {
         }
     }
 
+    LaunchedEffect(demoMode) {
+        if (!demoMode) return@LaunchedEffect
+        demoCountdown = 60
+        while (true) {
+            delay(1_000)
+            demoCountdown = if (demoCountdown <= 1) 60 else demoCountdown - 1
+        }
+    }
+
     DisposableEffect(view) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
@@ -181,7 +194,28 @@ fun ScannerScreen() {
     fun copyTransfer(text: String) {
         ClipboardHandoff.copy(context, text)
         ClipboardExpiryService.start(context, text)
+        ClipboardSession.text = text
+        lastClipboardText = text
         clipboardExpiresAt = SystemClock.elapsedRealtime() + ClipboardExpiryService.EXPIRY_MILLIS
+    }
+
+    fun restoreClipboard() {
+        val text = ClipboardSession.text ?: lastClipboardText ?: return
+        copyTransfer(text)
+        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        Toast.makeText(context, "Đã copy lại", Toast.LENGTH_SHORT).show()
+    }
+
+    fun clearClipboardNow() {
+        val text = ClipboardSession.text ?: lastClipboardText ?: return
+        ClipboardHandoff.clearIfMatches(context, text)
+        ClipboardSession.text = null
+        lastClipboardText = null
+        clipboardExpiresAt = 0L
+        clipboardRemaining = 0
+        context.stopService(Intent(context, ClipboardExpiryService::class.java))
+        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        Toast.makeText(context, "Đã xoá clipboard", Toast.LENGTH_SHORT).show()
     }
 
     fun showRaw(raw: String, reason: String) {
@@ -382,7 +416,26 @@ fun ScannerScreen() {
                         ScannerOverlay(
                             torchOn = torchOn,
                             onToggleTorch = { torchOn = !torchOn },
-                            clipboardRemaining = clipboardRemaining,
+                            clipboardRemaining = if (demoMode) demoCountdown else clipboardRemaining,
+                            onRestoreClipboard = when {
+                                demoMode -> {
+                                    {
+                                        demoCountdown = 60
+                                        view.performHapticFeedback(
+                                            HapticFeedbackConstants.CLOCK_TICK,
+                                        )
+                                    }
+                                }
+                                lastClipboardText != null -> {
+                                    { restoreClipboard() }
+                                }
+                                else -> null
+                            },
+                            onClearClipboard = if (!demoMode && lastClipboardText != null) {
+                                { clearClipboardNow() }
+                            } else {
+                                null
+                            },
                             frameSize = frameSize,
                             frameOffsetY = -maxHeight * 0.05f,
                             showTorch = true,
@@ -685,6 +738,8 @@ private fun ScannerOverlay(
     torchOn: Boolean,
     onToggleTorch: () -> Unit,
     clipboardRemaining: Int,
+    onRestoreClipboard: (() -> Unit)?,
+    onClearClipboard: (() -> Unit)?,
     frameSize: Dp,
     frameOffsetY: Dp,
     showTorch: Boolean,
@@ -702,29 +757,29 @@ private fun ScannerOverlay(
                 .background(Color.Black.copy(alpha = 0.45f)),
         )
 
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FilledTonalButton(
-                onClick = onShowInfo,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = Color.Black.copy(alpha = 0.45f),
-                    contentColor = Color.White,
-                ),
-                contentPadding = PaddingValues(horizontal = 14.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Thông tin")
-            }
+                FilledTonalButton(
+                    onClick = onShowInfo,
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = Color.Black.copy(alpha = 0.45f),
+                        contentColor = Color.White,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                ) {
+                    Text("Thông tin")
+                }
 
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
                 if (showTorch) {
                     FilledTonalButton(
                         onClick = onToggleTorch,
@@ -749,22 +804,57 @@ private fun ScannerOverlay(
                         Text(text = if (torchOn) "Tắt đèn" else "Bật đèn")
                     }
                 }
+            }
 
-                if (showImage) {
-                    FilledTonalButton(
-                        onClick = onPickImage,
-                        modifier = Modifier.size(48.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = Color.Black.copy(alpha = 0.45f),
-                            contentColor = Color.White,
-                        ),
-                        contentPadding = PaddingValues(0.dp),
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_image),
-                            contentDescription = "Quét ảnh",
-                            modifier = Modifier.size(22.dp),
+            if (showImage || clipboardRemaining > 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                ) {
+                    if (clipboardRemaining > 0) {
+                        Text(
+                            text = "Clipboard còn ${clipboardRemaining}s",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .background(
+                                    color = Color.Black.copy(alpha = 0.45f),
+                                    shape = RoundedCornerShape(50),
+                                )
+                                .then(
+                                    if (onRestoreClipboard != null || onClearClipboard != null) {
+                                        Modifier.combinedClickable(
+                                            onClick = { onRestoreClipboard?.invoke() },
+                                            onLongClick = { onClearClipboard?.invoke() },
+                                        )
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
                         )
+                    }
+
+                    if (showImage) {
+                        FilledTonalButton(
+                            onClick = onPickImage,
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .size(48.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = Color.Black.copy(alpha = 0.45f),
+                                contentColor = Color.White,
+                            ),
+                            contentPadding = PaddingValues(0.dp),
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_image),
+                                contentDescription = "Quét ảnh",
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -781,23 +871,6 @@ private fun ScannerOverlay(
                     shape = RoundedCornerShape(28.dp),
                 ),
         )
-
-        if (clipboardRemaining > 0) {
-            Text(
-                text = "Clipboard còn ${clipboardRemaining}s",
-                color = Color.White,
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-                    .padding(top = if (showImage) 120.dp else 68.dp)
-                    .background(
-                        color = Color.Black.copy(alpha = 0.45f),
-                        shape = RoundedCornerShape(50),
-                    )
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-            )
-        }
     }
 }
 

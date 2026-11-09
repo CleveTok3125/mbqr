@@ -21,6 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import vn.io.elsutm.mbqr.R
 import vn.io.elsutm.mbqr.handoff.ClipboardHandoff
+import vn.io.elsutm.mbqr.handoff.ClipboardSession
 
 /**
  * Keeps the transfer text on the clipboard for at most one minute, then clears
@@ -102,6 +103,7 @@ class ClipboardExpiryService : Service() {
     private fun clearClipboard() {
         val text = expectedText ?: return
         ClipboardHandoff.clearIfMatches(this, text)
+        ClipboardSession.text = null
         expectedText = null
     }
 
