@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -60,6 +61,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import vn.io.elsutm.mbqr.handoff.ClipboardHandoff
 import vn.io.elsutm.mbqr.handoff.MbLauncher
+import vn.io.elsutm.mbqr.handoff.QrActions
+import vn.io.elsutm.mbqr.handoff.UrlDetector
 import vn.io.elsutm.mbqr.service.ClipboardExpiryService
 import vn.io.elsutm.mbqr.vietqr.BankBin
 import vn.io.elsutm.mbqr.vietqr.TransferBuilder
@@ -242,10 +245,56 @@ fun ScannerScreen() {
                     }
                     OutlinedButton(
                         onClick = {
+                            if (!QrActions.shareText(context, raw)) {
+                                Toast.makeText(
+                                    context,
+                                    "Không có ứng dụng để chia sẻ",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Chia sẻ")
+                    }
+                }
+
+                if (UrlDetector.isHttpUrl(raw)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                if (!QrActions.openHttpUrl(context, raw)) {
+                                    Toast.makeText(
+                                        context,
+                                        "Không có ứng dụng để mở liên kết",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Mở liên kết")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                sheetRaw = null
+                                scanningEnabled = true
+                            },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Quét tiếp")
+                        }
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = {
                             sheetRaw = null
                             scanningEnabled = true
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text("Quét tiếp")
                     }

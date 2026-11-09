@@ -73,6 +73,8 @@ Required repository secrets:
 ## Behavior notes
 
 - Scanning starts as soon as camera permission is granted.
+- Raw payloads that are not a supported VietQR can be copied, shared, or
+  opened in a browser when the content is a plain HTTP(S) URL.
 - The amount is rounded to two decimal places of the thousands value, because
   the MB hub does not parse three decimals.
 - After a successful handoff the camera stops and a clipboard countdown is
