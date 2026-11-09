@@ -14,6 +14,7 @@ import androidx.camera.core.Camera
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -72,6 +73,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
@@ -115,6 +117,8 @@ fun ScannerScreen() {
     var clipboardExpiresAt by rememberSaveable { mutableStateOf(0L) }
     var clipboardRemaining by rememberSaveable { mutableStateOf(0) }
     var showInfo by rememberSaveable { mutableStateOf(false) }
+    var demoMode by remember { mutableStateOf(false) }
+    var versionTaps by remember { mutableStateOf(0) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var zoomMin by remember { mutableStateOf(1f) }
@@ -232,6 +236,33 @@ fun ScannerScreen() {
         )
     }
 
+    fun decodePickedImage(uri: Uri) {
+        captureExecutor.execute {
+            val text = try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    PhotoQrDecoder.decodeJpeg(stream.readBytes())
+                }
+            } catch (_: Exception) {
+                null
+            }
+            mainExecutor.execute {
+                if (text != null) {
+                    handleDecoded(text)
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Không tìm thấy mã trong ảnh",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        }
+    }
+
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri -> if (uri != null) decodePickedImage(uri) }
+
     Scaffold(
         snackbarHost = {
             SnackbarHost(
@@ -281,7 +312,7 @@ fun ScannerScreen() {
                             .asPaddingValues()
                             .calculateBottomPadding()
                         val topBarHeight = statusTop + 64.dp
-                        val controlsHeight = if (camera != null) 190.dp else 0.dp
+                        val controlsHeight = if (camera != null || demoMode) 190.dp else 0.dp
                         val bottom = maxHeight - navigationBottom
                         val availableHeight = (bottom - topBarHeight - controlsHeight)
                             .coerceAtLeast(120.dp)
@@ -296,21 +327,30 @@ fun ScannerScreen() {
                         val controlsMargin = ((availableBelowFrame - 190.dp) / 2f)
                             .coerceAtLeast(16.dp)
 
-                        key(cameraAttempt) {
-                            CameraPreview(
+                        if (demoMode) {
+                            Image(
+                                painter = painterResource(R.drawable.demo_bg),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize(),
-                                torchOn = torchOn,
-                                scanningEnabled = scanningEnabled,
-                                onDecoded = ::handleDecoded,
-                                onCameraError = { message -> cameraError = message },
-                                onCameraBound = { camera = it },
-                                onImageCaptureBound = { imageCapture = it },
-                                onZoomStateChanged = { state ->
-                                    zoomMin = state.minZoomRatio
-                                    zoomMax = state.maxZoomRatio
-                                    zoomRatio = state.zoomRatio
-                                },
                             )
+                        } else {
+                            key(cameraAttempt) {
+                                CameraPreview(
+                                    modifier = Modifier.fillMaxSize(),
+                                    torchOn = torchOn,
+                                    scanningEnabled = scanningEnabled,
+                                    onDecoded = ::handleDecoded,
+                                    onCameraError = { message -> cameraError = message },
+                                    onCameraBound = { camera = it },
+                                    onImageCaptureBound = { imageCapture = it },
+                                    onZoomStateChanged = { state ->
+                                        zoomMin = state.minZoomRatio
+                                        zoomMax = state.maxZoomRatio
+                                        zoomRatio = state.zoomRatio
+                                    },
+                                )
+                            }
                         }
 
                         ScannerOverlay(
@@ -319,25 +359,40 @@ fun ScannerScreen() {
                             clipboardRemaining = clipboardRemaining,
                             frameSize = frameSize,
                             frameOffsetY = -maxHeight * 0.05f,
+                            showTorch = true,
+                            showImage = true,
+                            onPickImage = { imagePicker.launch("image/*") },
                             onShowInfo = { showInfo = true },
                         )
 
-                        if (camera != null) {
+                        if (camera != null || demoMode) {
                             CameraControls(
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     .navigationBarsPadding()
                                     .padding(bottom = controlsMargin),
                                 zoomRatio = zoomRatio,
-                                minZoom = zoomMin,
-                                maxZoom = zoomMax,
+                                minZoom = if (demoMode) 1f else zoomMin,
+                                maxZoom = if (demoMode) 8f else zoomMax,
                                 isCapturing = isCapturing,
-                                showCapture = imageCapture != null,
+                                showCapture = if (demoMode) true else imageCapture != null,
                                 onZoomChange = { ratio ->
                                     zoomRatio = ratio
-                                    camera?.cameraControl?.setZoomRatio(ratio)
+                                    if (!demoMode) {
+                                        camera?.cameraControl?.setZoomRatio(ratio)
+                                    }
                                 },
-                                onCapture = ::capturePhoto,
+                                onCapture = {
+                                    if (demoMode) {
+                                        Toast.makeText(
+                                            context,
+                                            "Chế độ demo",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    } else {
+                                        capturePhoto()
+                                    }
+                                },
                             )
                         }
                     }
@@ -488,6 +543,19 @@ fun ScannerScreen() {
                 CreditsContent(
                     version = BuildConfig.VERSION_NAME,
                     onOpenSource = { uriHandler.openUri(SOURCE_URL) },
+                    onVersionTap = {
+                        versionTaps += 1
+                        if (versionTaps >= 5) {
+                            versionTaps = 0
+                            demoMode = !demoMode
+                            showInfo = false
+                            Toast.makeText(
+                                context,
+                                if (demoMode) "Đã bật chế độ demo" else "Đã tắt chế độ demo",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
                 )
             },
             confirmButton = {
@@ -503,6 +571,7 @@ fun ScannerScreen() {
 private fun CreditsContent(
     version: String,
     onOpenSource: () -> Unit,
+    onVersionTap: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -527,6 +596,7 @@ private fun CreditsContent(
                     text = "Phiên bản $version",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable(onClick = onVersionTap),
                 )
             }
         }
@@ -581,6 +651,9 @@ private fun ScannerOverlay(
     clipboardRemaining: Int,
     frameSize: Dp,
     frameOffsetY: Dp,
+    showTorch: Boolean,
+    showImage: Boolean,
+    onPickImage: () -> Unit,
     onShowInfo: () -> Unit,
 ) {
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -599,7 +672,7 @@ private fun ScannerOverlay(
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
         ) {
             FilledTonalButton(
                 onClick = onShowInfo,
@@ -612,23 +685,52 @@ private fun ScannerOverlay(
                 Text("Thông tin")
             }
 
-            FilledTonalButton(
-                onClick = onToggleTorch,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = if (torchOn) TorchOnContainer else Color.Black.copy(alpha = 0.45f),
-                    contentColor = if (torchOn) TorchOnContent else Color.White,
-                ),
-                contentPadding = PaddingValues(horizontal = 12.dp),
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(
-                    painter = painterResource(
-                        if (torchOn) R.drawable.ic_flash_off else R.drawable.ic_flash_on,
-                    ),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(text = if (torchOn) "Tắt đèn" else "Bật đèn")
+                if (showTorch) {
+                    FilledTonalButton(
+                        onClick = onToggleTorch,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = if (torchOn) {
+                                TorchOnContainer
+                            } else {
+                                Color.Black.copy(alpha = 0.45f)
+                            },
+                            contentColor = if (torchOn) TorchOnContent else Color.White,
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(
+                                if (torchOn) R.drawable.ic_flash_off else R.drawable.ic_flash_on,
+                            ),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = if (torchOn) "Tắt đèn" else "Bật đèn")
+                    }
+                }
+
+                if (showImage) {
+                    FilledTonalButton(
+                        onClick = onPickImage,
+                        modifier = Modifier.size(48.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = Color.Black.copy(alpha = 0.45f),
+                            contentColor = Color.White,
+                        ),
+                        contentPadding = PaddingValues(0.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_image),
+                            contentDescription = "Quét ảnh",
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                }
             }
         }
 
@@ -652,7 +754,7 @@ private fun ScannerOverlay(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
-                    .padding(top = 68.dp)
+                    .padding(top = if (showImage) 120.dp else 68.dp)
                     .background(
                         color = Color.Black.copy(alpha = 0.45f),
                         shape = RoundedCornerShape(50),
