@@ -1,6 +1,7 @@
 package vn.io.elsutm.mbqr.camera
 
 import android.os.SystemClock
+import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.google.zxing.BarcodeFormat
@@ -8,7 +9,9 @@ import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
 import com.google.zxing.LuminanceSource
 import com.google.zxing.MultiFormatReader
+import com.google.zxing.NotFoundException
 import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.common.GlobalHistogramBinarizer
 import com.google.zxing.common.HybridBinarizer
 import kotlin.math.min
 
@@ -16,7 +19,8 @@ import kotlin.math.min
  * Decodes QR codes from CameraX frames without Google Play services.
  *
  * Frames are throttled and duplicate results are ignored so a single QR does not
- * trigger the handoff repeatedly.
+ * trigger the handoff repeatedly. The Y plane is used directly instead of
+ * converting every frame to a bitmap, which keeps the analyzer responsive.
  */
 class QrAnalyzer : ImageAnalysis.Analyzer {
 
@@ -31,16 +35,28 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
                 DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
                 DecodeHintType.CHARACTER_SET to "UTF-8",
                 DecodeHintType.TRY_HARDER to true,
+                DecodeHintType.ALSO_INVERTED to true,
             ),
         )
     }
 
     private var lastAttemptAt = 0L
     private var lastDecoded: String? = null
+    private var loggedFirstFrame = false
+    private var lastFailureLogAt = 0L
 
     override fun analyze(image: ImageProxy) {
         try {
             if (!enabled) return
+
+            if (!loggedFirstFrame) {
+                Log.d(
+                    TAG,
+                    "frame ${image.width}x${image.height} format=${image.format} " +
+                        "rotation=${image.imageInfo.rotationDegrees}",
+                )
+                loggedFirstFrame = true
+            }
 
             val now = SystemClock.elapsedRealtime()
             if (now - lastAttemptAt < THROTTLE_MILLIS) return
@@ -49,9 +65,13 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
             val text = decode(image) ?: return
             if (text == lastDecoded) return
             lastDecoded = text
+            Log.d(TAG, "decoded payload length=${text.length}")
             onDecoded(text)
-        } catch (_: Exception) {
-            // A single bad frame must not stop the analyzer.
+        } catch (error: Exception) {
+            if (SystemClock.elapsedRealtime() - lastFailureLogAt > LOG_INTERVAL_MILLIS) {
+                lastFailureLogAt = SystemClock.elapsedRealtime()
+                Log.w(TAG, "frame analysis failed", error)
+            }
         } finally {
             image.close()
         }
@@ -67,6 +87,34 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
         val height = image.height
         if (width <= 0 || height <= 0) return null
 
+        val luminance = extractLuminance(image, width, height, plane)
+        val source = PlanarYUVLuminanceSource(luminance, width, height, 0, 0, width, height, false)
+
+        // QR detection is rotation independent; skipping the rotation copy keeps
+        // analysis fast enough to run on every throttled frame.
+        return decodeSource(source)
+    }
+
+    private fun decodeSource(source: LuminanceSource): String? {
+        val binarizers = listOf(HybridBinarizer(source), GlobalHistogramBinarizer(source))
+        for (binarizer in binarizers) {
+            try {
+                return reader.decodeWithState(BinaryBitmap(binarizer)).text
+            } catch (_: NotFoundException) {
+                // Try the next binarizer.
+            } finally {
+                reader.reset()
+            }
+        }
+        return null
+    }
+
+    private fun extractLuminance(
+        image: ImageProxy,
+        width: Int,
+        height: Int,
+        plane: ImageProxy.PlaneProxy,
+    ): ByteArray {
         val buffer = plane.buffer
         val rowStride = plane.rowStride
         val pixelStride = plane.pixelStride
@@ -75,44 +123,33 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
         if (pixelStride == 1 && rowStride == width) {
             buffer.rewind()
             buffer.get(luminance, 0, min(buffer.remaining(), luminance.size))
-        } else {
-            val row = ByteArray(rowStride)
-            for (rowIndex in 0 until height) {
-                val offset = rowIndex * rowStride
-                val remaining = buffer.limit() - offset
-                if (remaining <= 0) break
+            return luminance
+        }
 
-                buffer.position(offset)
-                val count = min(rowStride, remaining)
-                buffer.get(row, 0, count)
+        val row = ByteArray(rowStride)
+        for (rowIndex in 0 until height) {
+            val offset = rowIndex * rowStride
+            val remaining = buffer.limit() - offset
+            if (remaining <= 0) break
 
-                val targetOffset = rowIndex * width
-                for (column in 0 until width) {
-                    val sourceIndex = column * pixelStride
-                    if (sourceIndex >= count) break
-                    luminance[targetOffset + column] = row[sourceIndex]
-                }
+            buffer.position(offset)
+            val count = min(rowStride, remaining)
+            buffer.get(row, 0, count)
+
+            val targetOffset = rowIndex * width
+            for (column in 0 until width) {
+                val sourceIndex = column * pixelStride
+                if (sourceIndex >= count) break
+                luminance[targetOffset + column] = row[sourceIndex]
             }
         }
 
-        var source: LuminanceSource =
-            PlanarYUVLuminanceSource(luminance, width, height, 0, 0, width, height, false)
-        source = when (image.imageInfo.rotationDegrees) {
-            90 -> source.rotateCounterClockwise()
-            180 -> source.rotateCounterClockwise().rotateCounterClockwise()
-            270 -> source.rotateCounterClockwise().rotateCounterClockwise().rotateCounterClockwise()
-            else -> source
-        }
-
-        val bitmap = BinaryBitmap(HybridBinarizer(source))
-        return try {
-            reader.decodeWithState(bitmap).text
-        } finally {
-            reader.reset()
-        }
+        return luminance
     }
 
     private companion object {
+        const val TAG = "MBQR"
         const val THROTTLE_MILLIS = 100L
+        const val LOG_INTERVAL_MILLIS = 2_000L
     }
 }

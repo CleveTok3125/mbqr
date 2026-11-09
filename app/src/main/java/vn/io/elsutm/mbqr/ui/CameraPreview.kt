@@ -3,6 +3,7 @@ package vn.io.elsutm.mbqr.ui
 import android.util.Size
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -18,7 +19,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -76,12 +79,13 @@ fun CameraPreview(
                     }
                     val analysis = ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                         .setResolutionSelector(
                             ResolutionSelector.Builder()
                                 .setResolutionStrategy(
                                     ResolutionStrategy(
                                         Size(1280, 720),
-                                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
                                     ),
                                 )
                                 .build(),
@@ -117,6 +121,14 @@ fun CameraPreview(
 
     AndroidView(
         factory = { previewView },
-        modifier = modifier,
+        modifier = modifier.pointerInput(camera) {
+            detectTapGestures { offset ->
+                val activeCamera = camera ?: return@detectTapGestures
+                val point = previewView.meteringPointFactory.createPoint(offset.x, offset.y)
+                activeCamera.cameraControl.startFocusAndMetering(
+                    FocusMeteringAction.Builder(point).build(),
+                )
+            }
+        },
     )
 }
