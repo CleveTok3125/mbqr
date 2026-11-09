@@ -122,14 +122,14 @@ fun ScannerScreen() {
         when (val result = VietQrParser.parse(raw)) {
             is VietQrParseResult.VietQr -> {
                 val data = result.data
-                val bankName = BankBin.bankName(data.bankBin)
+                val bankPrefix = BankBin.transferPrefix(data.bankBin)
 
                 when {
                     !result.crcValid -> showRaw(raw, "CRC không hợp lệ")
-                    bankName == null -> showRaw(raw, "Chưa hỗ trợ ngân hàng BIN ${data.bankBin}")
+                    bankPrefix == null -> showRaw(raw, "Chưa hỗ trợ ngân hàng BIN ${data.bankBin}")
                     else -> {
                         scanningEnabled = false
-                        val transferText = TransferBuilder.build(data, bankName)
+                        val transferText = TransferBuilder.build(data, bankPrefix)
                         copyTransfer(transferText)
                         if (!MbLauncher.open(context)) {
                             scanningEnabled = true

@@ -1,14 +1,14 @@
 package vn.io.elsutm.mbqr.vietqr
 
 /**
- * NAPAS bank BIN to display name. Only banks whose transfer string has been
- * verified with the MB hub belong here.
+ * NAPAS bank BIN to the prefix used by the MB transfer hub. Only banks whose
+ * transfer syntax has been verified belong here.
  */
 object BankBin {
 
-    private val names = mapOf(
-        "970422" to "MB Bank",
+    private val transferPrefixes = mapOf(
+        "970422" to "MB",
     )
 
-    fun bankName(bin: String): String? = names[bin]
+    fun transferPrefix(bin: String): String? = transferPrefixes[bin]
 }

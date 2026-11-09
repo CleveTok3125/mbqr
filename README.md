@@ -6,7 +6,7 @@ Android QR scanner that hands a VietQR transfer to the MB Bank app.
 
 1. Scans a VietQR (NAPAS EMVCo) code with CameraX and ZXing.
 2. Builds the text that the MB transfer hub understands:
-   `STK <account> <amount in thousands> - MB Bank [recipient name]`.
+   `MB <account> <amount in thousands> [recipient name]`.
 3. Copies that text to the clipboard and opens `mbbank://?ad_dp=transfer`.
 4. Clears the clipboard after 60 seconds, or immediately when the app is
    removed from recents.
