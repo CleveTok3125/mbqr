@@ -61,6 +61,15 @@ Required repository secrets:
 - `KEY_ALIAS`
 - `KEY_PASSWORD`
 
+## Manual runs
+
+- **CI**: Actions -> `ci` -> Run workflow.
+- **Release smoke**: Actions -> `release` -> Run workflow with `publish`
+  disabled. The signed APK and checksums are uploaded as artifacts without
+  creating a release.
+- Enabling `publish` on a manual run creates a release tagged
+  `smoke-<run-number>`.
+
 ## Behavior notes
 
 - Scanning starts as soon as camera permission is granted.
