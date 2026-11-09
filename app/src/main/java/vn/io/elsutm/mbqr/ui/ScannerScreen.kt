@@ -1,6 +1,9 @@
 package vn.io.elsutm.mbqr.ui
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
@@ -83,6 +86,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import vn.io.elsutm.mbqr.BuildConfig
@@ -153,6 +159,22 @@ fun ScannerScreen() {
     DisposableEffect(view) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
+    }
+
+    val activity = context.findActivity()
+    DisposableEffect(demoMode, activity) {
+        val window = activity?.window
+        val controller = window?.let {
+            WindowCompat.getInsetsController(it, it.decorView)
+        }
+        if (demoMode) {
+            controller?.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller?.hide(WindowInsetsCompat.Type.statusBars())
+        } else {
+            controller?.show(WindowInsetsCompat.Type.statusBars())
+        }
+        onDispose { controller?.show(WindowInsetsCompat.Type.statusBars()) }
     }
 
     fun copyTransfer(text: String) {
@@ -888,6 +910,15 @@ private fun decodeCapturedImage(image: ImageProxy): String? {
         return PhotoQrDecoder.decodeJpeg(bytes)
     }
     return PhotoQrDecoder.decodeBitmap(image.toBitmap())
+}
+
+private fun Context.findActivity(): Activity? {
+    var current: Context = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return current as? Activity
 }
 
 private val TorchOnContainer = Color(0xFFFFC107)
