@@ -18,11 +18,12 @@ val hasReleaseKeystore = keystorePropertiesFile.exists() || envKeystorePath != n
 android {
     namespace = "vn.io.elsutm.mbqr"
     compileSdk = 37
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "vn.io.elsutm.mbqr"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionName = System.getenv("VERSION_NAME") ?: "0.1.0"
 
