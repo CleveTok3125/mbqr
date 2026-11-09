@@ -41,11 +41,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,12 +75,14 @@ fun ScannerScreen() {
     val scope = rememberCoroutineScope()
 
     var cameraGranted by remember { mutableStateOf(hasCameraPermission(context)) }
-    var scanningEnabled by remember { mutableStateOf(true) }
-    var torchOn by remember { mutableStateOf(false) }
-    var sheetRaw by remember { mutableStateOf<String?>(null) }
-    var sheetReason by remember { mutableStateOf("") }
-    var clipboardExpiresAt by remember { mutableLongStateOf(0L) }
-    var clipboardRemaining by remember { mutableIntStateOf(0) }
+    var cameraError by rememberSaveable { mutableStateOf<String?>(null) }
+    var cameraAttempt by rememberSaveable { mutableStateOf(0) }
+    var scanningEnabled by rememberSaveable { mutableStateOf(true) }
+    var torchOn by rememberSaveable { mutableStateOf(false) }
+    var sheetRaw by rememberSaveable { mutableStateOf<String?>(null) }
+    var sheetReason by rememberSaveable { mutableStateOf("") }
+    var clipboardExpiresAt by rememberSaveable { mutableStateOf(0L) }
+    var clipboardRemaining by rememberSaveable { mutableStateOf(0) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -164,23 +166,29 @@ fun ScannerScreen() {
                     },
                 )
 
+                cameraError != null -> CameraErrorContent(
+                    message = cameraError.orEmpty(),
+                    onRetry = {
+                        cameraError = null
+                        cameraAttempt += 1
+                    },
+                )
+
                 !scanningEnabled && sheetRaw == null -> PausedContent(
                     clipboardRemaining = clipboardRemaining,
                     onScanAgain = { scanningEnabled = true },
                 )
 
                 else -> {
-                    CameraPreview(
-                        modifier = Modifier.fillMaxSize(),
-                        torchOn = torchOn,
-                        scanningEnabled = scanningEnabled,
-                        onDecoded = ::handleDecoded,
-                        onCameraError = { message ->
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Lỗi camera: $message")
-                            }
-                        },
-                    )
+                    key(cameraAttempt) {
+                        CameraPreview(
+                            modifier = Modifier.fillMaxSize(),
+                            torchOn = torchOn,
+                            scanningEnabled = scanningEnabled,
+                            onDecoded = ::handleDecoded,
+                            onCameraError = { message -> cameraError = message },
+                        )
+                    }
 
                     ScannerOverlay(
                         torchOn = torchOn,
@@ -344,6 +352,38 @@ private fun PausedContent(
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = onScanAgain) {
             Text("Quét mã khác")
+        }
+    }
+}
+
+@Composable
+private fun CameraErrorContent(
+    message: String,
+    onRetry: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = "Không mở được camera",
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White.copy(alpha = 0.75f),
+            textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = onRetry) {
+            Text("Thử lại")
         }
     }
 }
