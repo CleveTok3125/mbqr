@@ -11,10 +11,14 @@ Android QR scanner that hands a VietQR transfer to the MB Bank app.
 4. Clears the clipboard after 60 seconds, or immediately when the app is
    removed from recents.
 
-The MB app does not accept account or amount values through a deeplink, so the
-transfer text still has to be pasted into the hub by long-pressing the input
-field and choosing Paste. The transfer content (tag 62) is not filled by MB and
-must be entered manually.
+## Demo
+
+Static mockups:
+
+<p>
+  <img src="docs/scanner-mock.png" alt="Scanner screen" width="300">
+  <img src="docs/info-mock.png" alt="Credits dialog" width="300">
+</p>
 
 ## Supported input
 
@@ -77,10 +81,11 @@ Required repository secrets:
   decodes it, which extends the usable distance beyond the preview stream.
 - Raw payloads that are not a supported VietQR can be copied, shared, or
   opened in a browser when the content is a plain HTTP(S) URL.
-- The amount is rounded to two decimal places of the thousands value, because
-  the MB hub does not parse three decimals.
+- The amount is rounded to two decimal places of the thousands value.
 - After a successful handoff the camera stops and a clipboard countdown is
   shown; tap **Quét mã khác** to scan another code.
+- Paste the copied text into the MB hub with a long-press. Transfer content is
+  entered manually.
 - The foreground service only runs while the clipboard entry is alive. It stops
   when the one-minute timer expires or when the task is removed from recents.
 - No internet permission, no analytics, no background jobs.
