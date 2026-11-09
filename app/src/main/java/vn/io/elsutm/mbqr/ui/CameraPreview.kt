@@ -5,11 +5,14 @@ import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
+import androidx.camera.core.ZoomState
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -19,12 +22,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Observer
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import vn.io.elsutm.mbqr.camera.QrAnalyzer
 import java.util.concurrent.Executors
@@ -36,6 +39,9 @@ fun CameraPreview(
     scanningEnabled: Boolean,
     onDecoded: (String) -> Unit,
     onCameraError: (String) -> Unit,
+    onCameraBound: (Camera?) -> Unit = {},
+    onImageCaptureBound: (ImageCapture?) -> Unit = {},
+    onZoomStateChanged: (ZoomState) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -50,6 +56,9 @@ fun CameraPreview(
     val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
     val currentOnDecoded by rememberUpdatedState(onDecoded)
     val currentOnCameraError by rememberUpdatedState(onCameraError)
+    val currentOnCameraBound by rememberUpdatedState(onCameraBound)
+    val currentOnImageCaptureBound by rememberUpdatedState(onImageCaptureBound)
+    val currentOnZoomStateChanged by rememberUpdatedState(onZoomStateChanged)
 
     SideEffect {
         analyzer.onDecoded = { text -> mainExecutor.execute { currentOnDecoded(text) } }
@@ -92,14 +101,33 @@ fun CameraPreview(
                         )
                         .build()
                         .also { it.setAnalyzer(analysisExecutor, analyzer) }
+                    val imageCapture = ImageCapture.Builder()
+                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                        .build()
 
                     resolvedProvider.unbindAll()
-                    camera = resolvedProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        CameraSelector.DEFAULT_BACK_CAMERA,
-                        preview,
-                        analysis,
-                    )
+                    camera = try {
+                        resolvedProvider.bindToLifecycle(
+                            lifecycleOwner,
+                            CameraSelector.DEFAULT_BACK_CAMERA,
+                            preview,
+                            analysis,
+                            imageCapture,
+                        ).also { currentOnImageCaptureBound(imageCapture) }
+                    } catch (_: Exception) {
+                        // Some devices cannot bind three use cases. Keep live scanning
+                        // and hide the photo capture control.
+                        resolvedProvider.unbindAll()
+                        currentOnImageCaptureBound(null)
+                        resolvedProvider.bindToLifecycle(
+                            lifecycleOwner,
+                            CameraSelector.DEFAULT_BACK_CAMERA,
+                            preview,
+                            analysis,
+                        )
+                    }
+
+                    currentOnCameraBound(camera)
                 } catch (error: Exception) {
                     currentOnCameraError(error.message ?: "Camera unavailable")
                 }
@@ -111,12 +139,25 @@ fun CameraPreview(
             disposed = true
             provider?.unbindAll()
             camera = null
+            currentOnCameraBound(null)
+            currentOnImageCaptureBound(null)
             analysisExecutor.shutdown()
         }
     }
 
     LaunchedEffect(torchOn, camera) {
         camera?.cameraControl?.enableTorch(torchOn)
+    }
+
+    DisposableEffect(camera, lifecycleOwner) {
+        val activeCamera = camera
+        if (activeCamera == null) {
+            onDispose {}
+        } else {
+            val observer = Observer<ZoomState> { state -> currentOnZoomStateChanged(state) }
+            activeCamera.cameraInfo.zoomState.observe(lifecycleOwner, observer)
+            onDispose { activeCamera.cameraInfo.zoomState.removeObserver(observer) }
+        }
     }
 
     AndroidView(

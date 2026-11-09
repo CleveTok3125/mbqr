@@ -73,6 +73,8 @@ Required repository secrets:
 ## Behavior notes
 
 - Scanning starts as soon as camera permission is granted.
+- Drag the arc dial to zoom. The shutter captures a full-resolution photo and
+  decodes it, which extends the usable distance beyond the preview stream.
 - Raw payloads that are not a supported VietQR can be copied, shared, or
   opened in a browser when the content is a plain HTTP(S) URL.
 - The amount is rounded to two decimal places of the thousands value, because

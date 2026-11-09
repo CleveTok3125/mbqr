@@ -3,12 +3,17 @@ package vn.io.elsutm.mbqr.ui
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.ImageFormat
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -66,6 +71,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import vn.io.elsutm.mbqr.R
+import vn.io.elsutm.mbqr.camera.PhotoQrDecoder
 import vn.io.elsutm.mbqr.handoff.ClipboardHandoff
 import vn.io.elsutm.mbqr.handoff.MbLauncher
 import vn.io.elsutm.mbqr.handoff.QrActions
@@ -75,6 +81,7 @@ import vn.io.elsutm.mbqr.vietqr.BankBin
 import vn.io.elsutm.mbqr.vietqr.TransferBuilder
 import vn.io.elsutm.mbqr.vietqr.VietQrParseResult
 import vn.io.elsutm.mbqr.vietqr.VietQrParser
+import java.util.concurrent.Executors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,6 +100,19 @@ fun ScannerScreen() {
     var sheetReason by rememberSaveable { mutableStateOf("") }
     var clipboardExpiresAt by rememberSaveable { mutableStateOf(0L) }
     var clipboardRemaining by rememberSaveable { mutableStateOf(0) }
+    var camera by remember { mutableStateOf<Camera?>(null) }
+    var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var zoomMin by remember { mutableStateOf(1f) }
+    var zoomMax by remember { mutableStateOf(1f) }
+    var zoomRatio by remember { mutableStateOf(1f) }
+    var isCapturing by remember { mutableStateOf(false) }
+
+    val captureExecutor = remember { Executors.newSingleThreadExecutor() }
+    val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
+
+    DisposableEffect(Unit) {
+        onDispose { captureExecutor.shutdown() }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -155,6 +175,48 @@ fun ScannerScreen() {
         }
     }
 
+    fun capturePhoto() {
+        val capture = imageCapture ?: return
+        if (isCapturing) return
+
+        isCapturing = true
+        capture.takePicture(
+            captureExecutor,
+            object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    val text = try {
+                        decodeCapturedImage(image)
+                    } finally {
+                        image.close()
+                    }
+                    mainExecutor.execute {
+                        isCapturing = false
+                        if (text != null) {
+                            handleDecoded(text)
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "Không tìm thấy mã trong ảnh",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    mainExecutor.execute {
+                        isCapturing = false
+                        Toast.makeText(
+                            context,
+                            "Chụp ảnh thất bại",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+            },
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = Color.Black,
@@ -197,6 +259,13 @@ fun ScannerScreen() {
                             scanningEnabled = scanningEnabled,
                             onDecoded = ::handleDecoded,
                             onCameraError = { message -> cameraError = message },
+                            onCameraBound = { camera = it },
+                            onImageCaptureBound = { imageCapture = it },
+                            onZoomStateChanged = { state ->
+                                zoomMin = state.minZoomRatio
+                                zoomMax = state.maxZoomRatio
+                                zoomRatio = state.zoomRatio
+                            },
                         )
                     }
 
@@ -204,7 +273,27 @@ fun ScannerScreen() {
                         torchOn = torchOn,
                         onToggleTorch = { torchOn = !torchOn },
                         clipboardRemaining = clipboardRemaining,
+                        showBottomInfo = camera == null,
                     )
+
+                    if (camera != null) {
+                        CameraControls(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .navigationBarsPadding()
+                                .padding(bottom = 24.dp),
+                            zoomRatio = zoomRatio,
+                            minZoom = zoomMin,
+                            maxZoom = zoomMax,
+                            isCapturing = isCapturing,
+                            showCapture = imageCapture != null,
+                            onZoomChange = { ratio ->
+                                zoomRatio = ratio
+                                camera?.cameraControl?.setZoomRatio(ratio)
+                            },
+                            onCapture = ::capturePhoto,
+                        )
+                    }
                 }
             }
         }
@@ -350,6 +439,7 @@ private fun ScannerOverlay(
     torchOn: Boolean,
     onToggleTorch: () -> Unit,
     clipboardRemaining: Int,
+    showBottomInfo: Boolean,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -397,27 +487,29 @@ private fun ScannerOverlay(
                 ),
         )
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            if (clipboardRemaining > 0) {
+        if (showBottomInfo) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (clipboardRemaining > 0) {
+                    Text(
+                        text = "Clipboard tự xoá sau ${clipboardRemaining}s",
+                        color = Color.White.copy(alpha = 0.75f),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
                 Text(
-                    text = "Clipboard tự xoá sau ${clipboardRemaining}s",
-                    color = Color.White.copy(alpha = 0.75f),
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "Đưa mã vào khung",
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
                 )
-                Spacer(modifier = Modifier.height(6.dp))
             }
-            Text(
-                text = "Đưa mã vào khung",
-                color = Color.White,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-            )
         }
     }
 }
@@ -535,6 +627,16 @@ private fun PermissionContent(
             Text("Mở cài đặt", color = Color.White)
         }
     }
+}
+
+private fun decodeCapturedImage(image: ImageProxy): String? {
+    if (image.format == ImageFormat.JPEG) {
+        val buffer = image.planes.firstOrNull()?.buffer ?: return null
+        val bytes = ByteArray(buffer.remaining())
+        buffer.get(bytes)
+        return PhotoQrDecoder.decodeJpeg(bytes)
+    }
+    return PhotoQrDecoder.decodeBitmap(image.toBitmap())
 }
 
 private val TorchOnContainer = Color(0xFFFFC107)
