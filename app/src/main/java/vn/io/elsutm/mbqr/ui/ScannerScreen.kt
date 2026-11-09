@@ -382,8 +382,10 @@ fun ScannerScreen() {
                             frameSize = frameSize,
                             frameOffsetY = -maxHeight * 0.05f,
                             showTorch = true,
-                            showImage = true,
-                            onPickImage = { imagePicker.launch("image/*") },
+                            showImage = !demoMode,
+                            onPickImage = {
+                                if (!demoMode) imagePicker.launch("image/*")
+                            },
                             onShowInfo = { showInfo = true },
                         )
 
