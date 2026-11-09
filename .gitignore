@@ -55,3 +55,4 @@ secrets/
 *.apk
 *.aab
 Screenshot_*.jpg
+.trash/
