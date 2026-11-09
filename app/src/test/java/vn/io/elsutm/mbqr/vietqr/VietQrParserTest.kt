@@ -10,15 +10,14 @@ class VietQrParserTest {
 
     @Test
     fun `parses sample payload`() {
-        val result = VietQrParser.parse(SAMPLE)
-
-        assertTrue(result is VietQrParseResult.VietQr)
-        val qr = (result as VietQrParseResult.VietQr).data
+        val result = VietQrParser.parse(SAMPLE) as? VietQrParseResult.VietQr
+            ?: throw AssertionError("expected a VietQR payload")
+        val qr = result.data
         assertEquals("970422", qr.bankBin)
         assertEquals("0941196908", qr.account)
         assertNull(qr.amountVnd)
         assertNull(qr.recipientName)
-        assertTrue((result as VietQrParseResult.VietQr).crcValid)
+        assertTrue(result.crcValid)
     }
 
     @Test
