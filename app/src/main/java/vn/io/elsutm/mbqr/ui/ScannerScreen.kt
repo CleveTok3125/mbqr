@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,6 +41,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,6 +56,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import vn.io.elsutm.mbqr.handoff.ClipboardHandoff
 import vn.io.elsutm.mbqr.handoff.MbLauncher
@@ -75,6 +79,8 @@ fun ScannerScreen() {
     var torchOn by remember { mutableStateOf(false) }
     var sheetRaw by remember { mutableStateOf<String?>(null) }
     var sheetReason by remember { mutableStateOf("") }
+    var clipboardExpiresAt by remember { mutableLongStateOf(0L) }
+    var clipboardRemaining by remember { mutableIntStateOf(0) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -84,9 +90,24 @@ fun ScannerScreen() {
         if (!cameraGranted) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
+    LaunchedEffect(clipboardExpiresAt) {
+        while (true) {
+            val remaining = clipboardExpiresAt - SystemClock.elapsedRealtime()
+            clipboardRemaining = ((remaining + 999) / 1000).coerceAtLeast(0).toInt()
+            if (remaining <= 0) break
+            delay(500)
+        }
+    }
+
     DisposableEffect(view) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
+    }
+
+    fun copyTransfer(text: String) {
+        ClipboardHandoff.copy(context, text)
+        ClipboardExpiryService.start(context, text)
+        clipboardExpiresAt = SystemClock.elapsedRealtime() + ClipboardExpiryService.EXPIRY_MILLIS
     }
 
     fun showRaw(raw: String, reason: String) {
@@ -109,8 +130,7 @@ fun ScannerScreen() {
                     else -> {
                         scanningEnabled = false
                         val transferText = TransferBuilder.build(data, bankName)
-                        ClipboardHandoff.copy(context, transferText)
-                        ClipboardExpiryService.start(context, transferText)
+                        copyTransfer(transferText)
                         if (!MbLauncher.open(context)) {
                             scanningEnabled = true
                             scope.launch { snackbarHostState.showSnackbar("Không mở được MB Bank") }
@@ -132,36 +152,8 @@ fun ScannerScreen() {
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            if (cameraGranted) {
-                CameraPreview(
-                    modifier = Modifier.fillMaxSize(),
-                    torchOn = torchOn,
-                    scanningEnabled = scanningEnabled,
-                    onDecoded = ::handleDecoded,
-                    onCameraError = { message ->
-                        scanningEnabled = false
-                        scope.launch { snackbarHostState.showSnackbar("Lỗi camera: $message") }
-                    },
-                )
-
-                ScannerOverlay(
-                    torchOn = torchOn,
-                    onToggleTorch = { torchOn = !torchOn },
-                )
-
-                if (!scanningEnabled) {
-                    Button(
-                        onClick = { scanningEnabled = true },
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .navigationBarsPadding()
-                            .padding(bottom = 72.dp),
-                    ) {
-                        Text("Quét tiếp")
-                    }
-                }
-            } else {
-                PermissionContent(
+            when {
+                !cameraGranted -> PermissionContent(
                     onRequest = { permissionLauncher.launch(Manifest.permission.CAMERA) },
                     onOpenSettings = {
                         val intent = Intent(
@@ -171,6 +163,31 @@ fun ScannerScreen() {
                         context.startActivity(intent)
                     },
                 )
+
+                !scanningEnabled && sheetRaw == null -> PausedContent(
+                    clipboardRemaining = clipboardRemaining,
+                    onScanAgain = { scanningEnabled = true },
+                )
+
+                else -> {
+                    CameraPreview(
+                        modifier = Modifier.fillMaxSize(),
+                        torchOn = torchOn,
+                        scanningEnabled = scanningEnabled,
+                        onDecoded = ::handleDecoded,
+                        onCameraError = { message ->
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Lỗi camera: $message")
+                            }
+                        },
+                    )
+
+                    ScannerOverlay(
+                        torchOn = torchOn,
+                        onToggleTorch = { torchOn = !torchOn },
+                        clipboardRemaining = clipboardRemaining,
+                    )
+                }
             }
         }
     }
@@ -207,8 +224,7 @@ fun ScannerScreen() {
                 ) {
                     Button(
                         onClick = {
-                            ClipboardHandoff.copy(context, raw)
-                            ClipboardExpiryService.start(context, raw)
+                            copyTransfer(raw)
                             sheetRaw = null
                             scanningEnabled = true
                         },
@@ -235,6 +251,7 @@ fun ScannerScreen() {
 private fun ScannerOverlay(
     torchOn: Boolean,
     onToggleTorch: () -> Unit,
+    clipboardRemaining: Int,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -270,16 +287,64 @@ private fun ScannerOverlay(
                 ),
         )
 
-        Text(
-            text = "Đưa mã vào khung",
-            color = Color.White,
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
                 .padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (clipboardRemaining > 0) {
+                Text(
+                    text = "Clipboard tự xoá sau ${clipboardRemaining}s",
+                    color = Color.White.copy(alpha = 0.75f),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+            Text(
+                text = "Đưa mã vào khung",
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PausedContent(
+    clipboardRemaining: Int,
+    onScanAgain: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = "Đã copy thông tin chuyển khoản",
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
+            textAlign = TextAlign.Center,
         )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = if (clipboardRemaining > 0) {
+                "Clipboard tự xoá sau ${clipboardRemaining}s"
+            } else {
+                "Clipboard đã được xoá"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.75f),
+            textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = onScanAgain) {
+            Text("Quét mã khác")
+        }
     }
 }
 

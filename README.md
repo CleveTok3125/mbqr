@@ -63,8 +63,10 @@ Required repository secrets:
 ## Behavior notes
 
 - Scanning starts as soon as camera permission is granted.
-- After a successful handoff the scanner pauses; tap **Quét tiếp** to scan
-  another code.
+- The amount is rounded to two decimal places of the thousands value, because
+  the MB hub does not parse three decimals.
+- After a successful handoff the camera stops and a clipboard countdown is
+  shown; tap **Quét mã khác** to scan another code.
 - The foreground service only runs while the clipboard entry is alive. It stops
   when the one-minute timer expires or when the task is removed from recents.
 - No internet permission, no analytics, no background jobs.
