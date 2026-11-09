@@ -13,11 +13,8 @@ Android QR scanner that hands a VietQR transfer to the MB Bank app.
 
 ## Demo
 
-Static mockups:
-
 <p>
-  <img src="docs/scanner-mock.png" alt="Scanner screen" width="300">
-  <img src="docs/info-mock.png" alt="Credits dialog" width="300">
+  <img src="docs/scanner.png" alt="Scanner screen" width="320">
 </p>
 
 ## Supported input
