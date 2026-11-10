@@ -94,6 +94,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import vn.io.elsutm.mbqr.BuildConfig
 import vn.io.elsutm.mbqr.R
@@ -115,9 +118,19 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
+private const val MB_REDIRECT_TIMEOUT_MS = 5_000L
+
+private enum class HandoffPhase { Idle, Awaiting, Retry, Final }
+
+private data class PendingHandoff(val raw: String, val transferText: String)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ScannerScreen() {
+fun ScannerScreen(
+    sharedImageUri: Uri? = null,
+    sharedImageNonce: Int = 0,
+    onSharedImageConsumed: () -> Unit = {},
+) {
     val context = LocalContext.current
     val view = LocalView.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -152,6 +165,14 @@ fun ScannerScreen() {
     var zoomMax by remember { mutableStateOf(1f) }
     var zoomRatio by remember { mutableStateOf(1f) }
     var isCapturing by remember { mutableStateOf(false) }
+    var handoffPhaseName by rememberSaveable { mutableStateOf(HandoffPhase.Idle.name) }
+    var handoffAttempt by rememberSaveable { mutableStateOf(0) }
+    var pendingHandoffRaw by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingHandoffText by rememberSaveable { mutableStateOf<String?>(null) }
+    val handoffPhase = HandoffPhase.valueOf(handoffPhaseName)
+    val pendingHandoff = pendingHandoffRaw?.let { raw ->
+        pendingHandoffText?.let { text -> PendingHandoff(raw, text) }
+    }
 
     val captureExecutor = remember { Executors.newSingleThreadExecutor() }
     val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
@@ -192,6 +213,7 @@ fun ScannerScreen() {
     }
 
     val activity = context.findActivity()
+    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(demoMode, activity) {
         val window = activity?.window
         val controller = window?.let {
@@ -260,19 +282,50 @@ fun ScannerScreen() {
         }
     }
 
-    fun copyAndOpenTransfer(text: String) {
+    fun resetHandoff() {
+        handoffPhaseName = HandoffPhase.Idle.name
+        handoffAttempt = 0
+        pendingHandoffRaw = null
+        pendingHandoffText = null
+    }
+
+    fun beginHandoff(raw: String, transferText: String) {
+        if (handoffPhase == HandoffPhase.Awaiting) return
+
         // The clipboard and timer must be ready before MB reads the paste buffer.
-        copyTransfer(text)
-        if (MbLauncher.open(context)) {
-            sheetRaw = null
-        } else {
-            sheetReason = "Không mở được MB Bank"
-            Toast.makeText(context, "Không mở được MB Bank", Toast.LENGTH_SHORT).show()
+        scanningEnabled = false
+        pendingHandoffRaw = raw
+        pendingHandoffText = transferText
+        copyTransfer(transferText)
+
+        handoffAttempt += 1
+        handoffPhaseName = HandoffPhase.Awaiting.name
+        val opened = MbLauncher.open(context)
+        sheetRaw = null
+
+        if (!opened) {
+            handoffPhaseName = if (handoffAttempt >= 2) {
+                HandoffPhase.Final.name
+            } else {
+                HandoffPhase.Retry.name
+            }
         }
+    }
+
+    fun retryHandoff() {
+        val pending = pendingHandoff ?: return
+        beginHandoff(pending.raw, pending.transferText)
+    }
+
+    fun showFinalConfirmation() {
+        val pending = pendingHandoff ?: return
+        resetHandoff()
+        showParsed(pending.raw, "Xác nhận chuyển khoản")
     }
 
     fun handleDecoded(raw: String) {
         if (!scanningEnabled) return
+        resetHandoff()
 
         // Any decoded QR is a scan success: either a sheet or the MB handoff follows.
         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
@@ -296,7 +349,7 @@ fun ScannerScreen() {
                 }
 
                 if (transferText == null) {
-                    showParsed(raw, "Chưa hỗ trợ ngân hàng BIN ${data.bankBin}")
+                    showParsed(raw, "Chưa hỗ trợ ngân hàng")
                     return
                 }
 
@@ -304,10 +357,7 @@ fun ScannerScreen() {
                 if (AppSettings.confirmBeforeOpeningMb(context)) {
                     showParsed(raw, "Xác nhận chuyển khoản")
                 } else {
-                    copyTransfer(transferText)
-                    if (!MbLauncher.open(context)) {
-                        showParsed(raw, "Không mở được MB Bank")
-                    }
+                    beginHandoff(raw, transferText)
                 }
             }
 
@@ -359,24 +409,59 @@ fun ScannerScreen() {
 
     fun decodePickedImage(uri: Uri) {
         captureExecutor.execute {
-            val text = try {
+            val bytes = try {
                 context.contentResolver.openInputStream(uri)?.use { stream ->
-                    PhotoQrDecoder.decodeJpeg(stream.readBytes())
+                    stream.readBytes()
                 }
             } catch (_: Exception) {
                 null
             }
+            val text = bytes?.let { PhotoQrDecoder.decodeJpeg(it) }
             mainExecutor.execute {
                 if (text != null) {
                     handleDecoded(text)
                 } else {
                     Toast.makeText(
                         context,
-                        "Không tìm thấy mã trong ảnh",
+                        if (bytes == null) "Không đọc được ảnh" else "Không tìm thấy mã trong ảnh",
                         Toast.LENGTH_SHORT,
                     ).show()
                 }
             }
+        }
+    }
+
+    LaunchedEffect(sharedImageUri, sharedImageNonce) {
+        val uri = sharedImageUri ?: return@LaunchedEffect
+        onSharedImageConsumed()
+        resetHandoff()
+        sheetRaw = null
+        scanningEnabled = true
+        decodePickedImage(uri)
+    }
+
+    DisposableEffect(lifecycleOwner, handoffPhase) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE && handoffPhase == HandoffPhase.Awaiting) {
+                resetHandoff()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(handoffPhase, handoffAttempt) {
+        if (handoffPhase != HandoffPhase.Awaiting) return@LaunchedEffect
+        delay(MB_REDIRECT_TIMEOUT_MS)
+        if (handoffPhase != HandoffPhase.Awaiting) return@LaunchedEffect
+        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            resetHandoff()
+            return@LaunchedEffect
+        }
+        handoffPhaseName = if (handoffAttempt >= 2) {
+            HandoffPhase.Final.name
+        } else {
+            HandoffPhase.Retry.name
         }
     }
 
@@ -419,10 +504,32 @@ fun ScannerScreen() {
                     },
                 )
 
-                !scanningEnabled && sheetRaw == null -> PausedContent(
-                    clipboardRemaining = clipboardRemaining,
-                    onScanAgain = { scanningEnabled = true },
-                )
+                !scanningEnabled && sheetRaw == null -> {
+                    val pending = pendingHandoff
+                    PausedContent(
+                        clipboardRemaining = clipboardRemaining,
+                        reminder = when (handoffPhase) {
+                            HandoffPhase.Retry -> "MB Bank chưa mở?"
+                            HandoffPhase.Final -> "Không mở được MB Bank. Thao tác thủ công?"
+                            else -> null
+                        },
+                        openLabel = if (handoffPhase == HandoffPhase.Final) {
+                            "Mở xác nhận chuyển khoản"
+                        } else {
+                            "Mở MB Bank"
+                        },
+                        onOpen = when {
+                            pending == null -> null
+                            handoffPhase == HandoffPhase.Retry -> ({ retryHandoff() })
+                            handoffPhase == HandoffPhase.Final -> ({ showFinalConfirmation() })
+                            else -> null
+                        },
+                        onScanAgain = {
+                            resetHandoff()
+                            scanningEnabled = true
+                        },
+                    )
+                }
 
                 else -> {
                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -569,6 +676,7 @@ fun ScannerScreen() {
         }
         ModalBottomSheet(
             onDismissRequest = {
+                resetHandoff()
                 sheetRaw = null
                 scanningEnabled = true
             },
@@ -579,18 +687,19 @@ fun ScannerScreen() {
                     reason = sheetReason,
                     data = parsed,
                     bankName = BankDirectory.find(parsed.bankBin)?.shortName,
-                    transferText = transferText,
+                    copyText = transferText ?: raw,
                     onOpenMb = if (transferText == null || !mbInstalled) {
                         null
                     } else if (demoMode) {
                         ({})
                     } else {
-                        ({ copyAndOpenTransfer(transferText) })
+                        ({ beginHandoff(raw, transferText) })
                     },
                     onCopy = if (demoMode) {
                         ({})
                     } else {
                         {
+                            resetHandoff()
                             copyTransfer(transferText ?: raw)
                             sheetRaw = null
                             scanningEnabled = true
@@ -611,6 +720,7 @@ fun ScannerScreen() {
                         }
                     },
                     onScanAgain = {
+                        resetHandoff()
                         sheetRaw = null
                         scanningEnabled = true
                     },
@@ -623,6 +733,7 @@ fun ScannerScreen() {
                         ({})
                     } else {
                         {
+                            resetHandoff()
                             copyTransfer(raw)
                             sheetRaw = null
                             scanningEnabled = true
@@ -655,6 +766,7 @@ fun ScannerScreen() {
                         }
                     },
                     onScanAgain = {
+                        resetHandoff()
                         sheetRaw = null
                         scanningEnabled = true
                     },
@@ -750,7 +862,7 @@ private fun ParsedQrSheetContent(
     reason: String,
     data: VietQrData,
     bankName: String?,
-    transferText: String?,
+    copyText: String,
     onOpenMb: (() -> Unit)?,
     onCopy: () -> Unit,
     onShare: () -> Unit,
@@ -766,24 +878,22 @@ private fun ParsedQrSheetContent(
         Text(text = reason, style = MaterialTheme.typography.titleLarge)
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ParsedField(label = "Ngân hàng", value = bankName ?: "BIN ${data.bankBin}")
+            ParsedField(label = "Ngân hàng", value = bankName ?: "<BIN ${data.bankBin}>")
             ParsedField(label = "Tài khoản", value = data.account)
             data.amountVnd?.let { ParsedField(label = "Số tiền", value = formatVnd(it)) }
             data.merchantName?.let { ParsedField(label = "Tên đơn vị", value = it) }
             data.content?.let { ParsedField(label = "Nội dung", value = it) }
         }
 
-        transferText?.let { text ->
-            SelectionContainer {
-                Text(
-                    text = text,
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .heightIn(max = 120.dp)
-                        .verticalScroll(rememberScrollState()),
-                )
-            }
+        SelectionContainer {
+            Text(
+                text = copyText,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .heightIn(max = 120.dp)
+                    .verticalScroll(rememberScrollState()),
+            )
         }
 
         onOpenMb?.let { open ->
@@ -1229,6 +1339,9 @@ private fun ScannerOverlay(
 @Composable
 private fun PausedContent(
     clipboardRemaining: Int,
+    reminder: String?,
+    openLabel: String,
+    onOpen: (() -> Unit)?,
     onScanAgain: () -> Unit,
 ) {
     Column(
@@ -1255,7 +1368,28 @@ private fun PausedContent(
             color = Color.White.copy(alpha = 0.75f),
             textAlign = TextAlign.Center,
         )
+        reminder?.let { text ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.75f),
+                textAlign = TextAlign.Center,
+            )
+        }
         Spacer(modifier = Modifier.height(24.dp))
+        onOpen?.let { open ->
+            FilledTonalButton(onClick = open) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_open_in_new),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(openLabel)
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
         Button(onClick = onScanAgain) {
             Icon(
                 painter = painterResource(R.drawable.ic_arrow_forward),

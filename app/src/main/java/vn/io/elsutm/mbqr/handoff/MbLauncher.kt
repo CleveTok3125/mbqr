@@ -28,6 +28,8 @@ object MbLauncher {
             return true
         } catch (_: ActivityNotFoundException) {
             // Fall through to the launcher activity.
+        } catch (_: SecurityException) {
+            // Fall through to the launcher activity.
         }
 
         val launchIntent = context.packageManager
@@ -39,6 +41,8 @@ object MbLauncher {
             context.startActivity(launchIntent)
             true
         } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
             false
         }
     }

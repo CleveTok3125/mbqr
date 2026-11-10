@@ -5,7 +5,8 @@ Android QR scanner that hands a VietQR transfer to the MB Bank app.
 ## What it does
 
 1. Scans a VietQR (NAPAS EMVCo) code with CameraX and ZXing from the camera,
-   a full-resolution capture, or a gallery image.
+   a full-resolution capture, a gallery image, or an image shared from another
+   app.
 2. Builds the text that the MB transfer hub understands:
    `<bank> <account> <amount in thousands> [merchant name]`.
 3. Shows the transfer sheet by default. Confirming copies that text to the
@@ -108,7 +109,8 @@ Required repository secrets:
 - **Cài đặt**: confirmation switch for the MB handoff and clipboard expiry
   (15–300 seconds, default 60). **Thông tin** opens app credits, version,
   source, and license.
-- **Đèn**: torch. **Ảnh**: scan an image from the gallery.
+- **Đèn**: torch. **Ảnh**: scan an image from the gallery. MBQR also accepts
+  one image shared from another app's share sheet.
 - **Arc dial**: CameraX zoom from `1x` to the camera maximum. Major ticks are
   powers of two plus the endpoints; minor ticks divide each interval. The final
   tail continues the same octave grid to the next power of two and clips at the
@@ -129,6 +131,12 @@ Required repository secrets:
   the handoff. The clipboard is written and the configured timer starts only
   after **Mở MB Bank** is pressed, so the clipboard is ready before MB opens.
   Disable the switch to copy and open MB Bank immediately.
+- If MB Bank does not come to the foreground within 5 seconds, the paused screen
+  shows **Mở MB Bank** again. If the retry also fails, it shows **Mở xác nhận
+  chuyển khoản**; that button reopens the normal transfer sheet for manual copy
+  and paste.
+- Shared images are decoded once from the URI granted by the sending app. The
+  app does not request gallery or storage permission for this flow.
 - The only name in the QR is the merchant name field. It may be the account
   holder name, a bank name, or absent. The app appends it as-is when present;
   MB resolves the actual recipient name separately.

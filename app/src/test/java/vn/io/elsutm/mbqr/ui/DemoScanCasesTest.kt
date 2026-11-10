@@ -30,13 +30,13 @@ class DemoScanCasesTest {
         assertEquals("970422", data.data.bankBin)
         assertEquals("00000000000001", data.data.account)
         assertEquals(10_000L, data.data.amountVnd)
-        assertEquals("NGUYEN VAN A", data.data.merchantName)
+        assertEquals("NGUYEN VAN MUOI", data.data.merchantName)
     }
 
     @Test
     fun `unsupported bank demo payload is valid but absent from the directory`() {
         val data = VietQrParser.parse(
-            case("Chưa hỗ trợ ngân hàng BIN 999999").raw,
+            case("Chưa hỗ trợ ngân hàng").raw,
         ) as VietQrParseResult.VietQr
 
         assertTrue(data.crcValid)
