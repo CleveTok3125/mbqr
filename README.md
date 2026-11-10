@@ -43,7 +43,9 @@ control/format characters and duplicate BINs, and refuses an unexpectedly
 short bank list.
 
 A scheduled workflow runs on the first day of each month and opens or updates
-a pull request when the directory changes.
+a pull request when the directory changes. The repository must allow GitHub
+Actions to create pull requests. Pull requests opened with `GITHUB_TOKEN` may
+not start `ci`; run it manually or push a follow-up commit when required.
 
 ## Build
 

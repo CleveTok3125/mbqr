@@ -15,6 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Bank directory tool tests
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
