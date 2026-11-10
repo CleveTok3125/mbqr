@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -60,8 +61,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -82,6 +85,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -100,6 +104,7 @@ import vn.io.elsutm.mbqr.handoff.MbLauncher
 import vn.io.elsutm.mbqr.handoff.QrActions
 import vn.io.elsutm.mbqr.handoff.UrlDetector
 import vn.io.elsutm.mbqr.service.ClipboardExpiryService
+import vn.io.elsutm.mbqr.settings.AppSettings
 import vn.io.elsutm.mbqr.vietqr.BankDirectory
 import vn.io.elsutm.mbqr.vietqr.TransferBuilder
 import vn.io.elsutm.mbqr.vietqr.VietQrData
@@ -108,6 +113,7 @@ import vn.io.elsutm.mbqr.vietqr.VietQrParser
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.concurrent.Executors
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,9 +133,18 @@ fun ScannerScreen() {
     var clipboardExpiresAt by rememberSaveable { mutableStateOf(0L) }
     var clipboardRemaining by rememberSaveable { mutableStateOf(0) }
     var lastClipboardText by remember { mutableStateOf(ClipboardSession.text) }
-    var showInfo by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showCredits by rememberSaveable { mutableStateOf(false) }
+    var confirmBeforeOpeningMb by remember {
+        mutableStateOf(AppSettings.confirmBeforeOpeningMb(context))
+    }
+    var clipboardExpirySeconds by remember {
+        mutableStateOf(AppSettings.clipboardExpirySeconds(context))
+    }
     var demoMode by remember { mutableStateOf(false) }
     var demoCountdown by remember { mutableStateOf(60) }
+    var demoCaseIndex by remember { mutableStateOf(0) }
+    var demoCaseMbInstalled by remember { mutableStateOf(true) }
     var versionTaps by remember { mutableStateOf(0) }
     var camera by remember { mutableStateOf<Camera?>(null) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
@@ -193,11 +208,12 @@ fun ScannerScreen() {
     }
 
     fun copyTransfer(text: String) {
+        val expiryMillis = AppSettings.clipboardExpiryMillis(context)
         ClipboardHandoff.copy(context, text)
-        ClipboardExpiryService.start(context, text)
+        ClipboardExpiryService.start(context, text, expiryMillis)
         ClipboardSession.text = text
         lastClipboardText = text
-        clipboardExpiresAt = SystemClock.elapsedRealtime() + ClipboardExpiryService.EXPIRY_MILLIS
+        clipboardExpiresAt = SystemClock.elapsedRealtime() + expiryMillis
     }
 
     fun restoreClipboard() {
@@ -233,6 +249,28 @@ fun ScannerScreen() {
         sheetReason = reason
     }
 
+    fun showNextDemoCase() {
+        val case = DEMO_SCAN_CASES[demoCaseIndex % DEMO_SCAN_CASES.size]
+        demoCaseIndex = (demoCaseIndex + 1) % DEMO_SCAN_CASES.size
+        demoCaseMbInstalled = case.mbInstalled
+        if (case.parsed) {
+            showParsed(case.raw, case.reason)
+        } else {
+            showRaw(case.raw, case.reason)
+        }
+    }
+
+    fun copyAndOpenTransfer(text: String) {
+        // The clipboard and timer must be ready before MB reads the paste buffer.
+        copyTransfer(text)
+        if (MbLauncher.open(context)) {
+            sheetRaw = null
+        } else {
+            sheetReason = "Không mở được MB Bank"
+            Toast.makeText(context, "Không mở được MB Bank", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun handleDecoded(raw: String) {
         if (!scanningEnabled) return
 
@@ -263,9 +301,13 @@ fun ScannerScreen() {
                 }
 
                 scanningEnabled = false
-                copyTransfer(transferText)
-                if (!MbLauncher.open(context)) {
-                    showParsed(raw, "Không mở được MB Bank")
+                if (AppSettings.confirmBeforeOpeningMb(context)) {
+                    showParsed(raw, "Xác nhận chuyển khoản")
+                } else {
+                    copyTransfer(transferText)
+                    if (!MbLauncher.open(context)) {
+                        showParsed(raw, "Không mở được MB Bank")
+                    }
                 }
             }
 
@@ -461,27 +503,31 @@ fun ScannerScreen() {
                             showImage = true,
                             onPickImage = {
                                 if (demoMode) {
-                                    Toast.makeText(
-                                        context,
-                                        "Chế độ demo",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
+                                    showNextDemoCase()
                                 } else {
                                     imagePicker.launch("image/*")
                                 }
                             },
-                            onShowInfo = { showInfo = true },
+                            onShowSettings = { showSettings = true },
                         )
 
                         if (camera != null || demoMode) {
+                            val dialMin = if (demoMode) {
+                                1f
+                            } else {
+                                maxOf(1f, zoomMin).coerceAtMost(zoomMax)
+                            }
+                            val dialMax = if (demoMode) 25f else zoomMax.coerceAtLeast(dialMin)
+                            val dialRatio = zoomRatio.coerceIn(dialMin, dialMax)
+
                             CameraControls(
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     .navigationBarsPadding()
                                     .padding(bottom = controlsMargin),
-                                zoomRatio = zoomRatio,
-                                minZoom = if (demoMode) 1f else zoomMin,
-                                maxZoom = if (demoMode) 8f else zoomMax,
+                                zoomRatio = dialRatio,
+                                minZoom = dialMin,
+                                maxZoom = dialMax,
                                 isCapturing = isCapturing,
                                 showCapture = if (demoMode) true else imageCapture != null,
                                 onZoomChange = { ratio ->
@@ -492,11 +538,7 @@ fun ScannerScreen() {
                                 },
                                 onCapture = {
                                     if (demoMode) {
-                                        Toast.makeText(
-                                            context,
-                                            "Chế độ demo",
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
+                                        showNextDemoCase()
                                     } else {
                                         capturePhoto()
                                     }
@@ -522,31 +564,50 @@ fun ScannerScreen() {
                     ?.let { TransferBuilder.build(data, it) }
             }
         }
+        val mbInstalled = remember(raw, demoMode, demoCaseMbInstalled) {
+            if (demoMode) demoCaseMbInstalled else MbLauncher.isInstalled(context)
+        }
         ModalBottomSheet(
             onDismissRequest = {
                 sheetRaw = null
                 scanningEnabled = true
             },
         ) {
+            HideDialogStatusBar(demoMode)
             if (sheetParsed && parsed != null) {
                 ParsedQrSheetContent(
                     reason = sheetReason,
                     data = parsed,
                     bankName = BankDirectory.find(parsed.bankBin)?.shortName,
                     transferText = transferText,
-                    onCopy = {
-                        copyTransfer(transferText ?: raw)
-                        sheetRaw = null
-                        scanningEnabled = true
+                    onOpenMb = if (transferText == null || !mbInstalled) {
+                        null
+                    } else if (demoMode) {
+                        ({})
+                    } else {
+                        ({ copyAndOpenTransfer(transferText) })
                     },
-                    onShare = {
-                        val text = transferText ?: raw
-                        if (!QrActions.shareText(context, text)) {
-                            Toast.makeText(
-                                context,
-                                "Không có ứng dụng để chia sẻ",
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                    onCopy = if (demoMode) {
+                        ({})
+                    } else {
+                        {
+                            copyTransfer(transferText ?: raw)
+                            sheetRaw = null
+                            scanningEnabled = true
+                        }
+                    },
+                    onShare = if (demoMode) {
+                        ({})
+                    } else {
+                        {
+                            val text = transferText ?: raw
+                            if (!QrActions.shareText(context, text)) {
+                                Toast.makeText(
+                                    context,
+                                    "Không có ứng dụng để chia sẻ",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
                         }
                     },
                     onScanAgain = {
@@ -558,27 +619,39 @@ fun ScannerScreen() {
                 RawQrSheetContent(
                     reason = sheetReason,
                     raw = raw,
-                    onCopy = {
-                        copyTransfer(raw)
-                        sheetRaw = null
-                        scanningEnabled = true
-                    },
-                    onShare = {
-                        if (!QrActions.shareText(context, raw)) {
-                            Toast.makeText(
-                                context,
-                                "Không có ứng dụng để chia sẻ",
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                    onCopy = if (demoMode) {
+                        ({})
+                    } else {
+                        {
+                            copyTransfer(raw)
+                            sheetRaw = null
+                            scanningEnabled = true
                         }
                     },
-                    onOpenLink = {
-                        if (!QrActions.openHttpUrl(context, raw)) {
-                            Toast.makeText(
-                                context,
-                                "Không có ứng dụng để mở liên kết",
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                    onShare = if (demoMode) {
+                        ({})
+                    } else {
+                        {
+                            if (!QrActions.shareText(context, raw)) {
+                                Toast.makeText(
+                                    context,
+                                    "Không có ứng dụng để chia sẻ",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                    },
+                    onOpenLink = if (demoMode) {
+                        ({})
+                    } else {
+                        {
+                            if (!QrActions.openHttpUrl(context, raw)) {
+                                Toast.makeText(
+                                    context,
+                                    "Không có ứng dụng để mở liên kết",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
                         }
                     },
                     onScanAgain = {
@@ -590,31 +663,81 @@ fun ScannerScreen() {
         }
     }
 
-    if (showInfo) {
-        val uriHandler = LocalUriHandler.current
+    if (showSettings) {
         AlertDialog(
-            onDismissRequest = { showInfo = false },
+            onDismissRequest = { showSettings = false },
+            title = { Text("Cài đặt") },
             text = {
-                CreditsContent(
-                    version = BuildConfig.VERSION_NAME,
-                    onOpenSource = { uriHandler.openUri(SOURCE_URL) },
-                    onVersionTap = {
-                        versionTaps += 1
-                        if (versionTaps >= 5) {
-                            versionTaps = 0
-                            demoMode = !demoMode
-                            showInfo = false
-                            Toast.makeText(
-                                context,
-                                if (demoMode) "Đã bật chế độ demo" else "Đã tắt chế độ demo",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HideDialogStatusBar(demoMode)
+                    SettingsToggle(
+                        label = "Hiện bảng xác nhận trước khi mở MB Bank",
+                        checked = confirmBeforeOpeningMb,
+                        onCheckedChange = { enabled ->
+                            confirmBeforeOpeningMb = enabled
+                            AppSettings.setConfirmBeforeOpeningMb(context, enabled)
+                        },
+                    )
+                    ClipboardExpirySetting(
+                        seconds = clipboardExpirySeconds,
+                        onSecondsChange = { seconds -> clipboardExpirySeconds = seconds },
+                        onSecondsChangeFinished = {
+                            AppSettings.setClipboardExpirySeconds(context, clipboardExpirySeconds)
+                        },
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showSettings = false
+                        showCredits = true
                     },
-                )
+                ) {
+                    Text("Thông tin")
+                }
             },
             confirmButton = {
-                TextButton(onClick = { showInfo = false }) {
+                TextButton(onClick = { showSettings = false }) {
+                    Text("Đóng")
+                }
+            },
+        )
+    }
+
+    if (showCredits) {
+        val uriHandler = LocalUriHandler.current
+        AlertDialog(
+            onDismissRequest = { showCredits = false },
+            text = {
+                Column {
+                    HideDialogStatusBar(demoMode)
+                    CreditsContent(
+                        version = BuildConfig.VERSION_NAME,
+                        onOpenSource = { uriHandler.openUri(SOURCE_URL) },
+                        onVersionTap = {
+                            versionTaps += 1
+                            if (versionTaps >= 5) {
+                                versionTaps = 0
+                                demoMode = !demoMode
+                                if (demoMode) {
+                                    zoomRatio = 1f
+                                    demoCaseIndex = 0
+                                    demoCaseMbInstalled = true
+                                }
+                                showCredits = false
+                                Toast.makeText(
+                                    context,
+                                    if (demoMode) "Đã bật chế độ demo" else "Đã tắt chế độ demo",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCredits = false }) {
                     Text("Đóng")
                 }
             },
@@ -628,6 +751,7 @@ private fun ParsedQrSheetContent(
     data: VietQrData,
     bankName: String?,
     transferText: String?,
+    onOpenMb: (() -> Unit)?,
     onCopy: () -> Unit,
     onShare: () -> Unit,
     onScanAgain: () -> Unit,
@@ -659,6 +783,12 @@ private fun ParsedQrSheetContent(
                         .heightIn(max = 120.dp)
                         .verticalScroll(rememberScrollState()),
                 )
+            }
+        }
+
+        onOpenMb?.let { open ->
+            Button(onClick = open, modifier = Modifier.fillMaxWidth()) {
+                Text("Mở MB Bank")
             }
         }
 
@@ -810,6 +940,69 @@ private fun formatVnd(amount: Long): String =
     NumberFormat.getNumberInstance(Locale.forLanguageTag("vi-VN")).format(amount) + " ₫"
 
 @Composable
+private fun SettingsToggle(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            )
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+@Composable
+private fun ClipboardExpirySetting(
+    seconds: Int,
+    onSecondsChange: (Int) -> Unit,
+    onSecondsChangeFinished: () -> Unit,
+) {
+    val minSeconds = AppSettings.MIN_CLIPBOARD_EXPIRY_SECONDS
+    val maxSeconds = AppSettings.MAX_CLIPBOARD_EXPIRY_SECONDS
+    val stepSeconds = AppSettings.CLIPBOARD_EXPIRY_STEP_SECONDS
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Thời gian clipboard",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                text = "$seconds giây",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Slider(
+            value = seconds.toFloat(),
+            onValueChange = { onSecondsChange(it.roundToInt()) },
+            onValueChangeFinished = onSecondsChangeFinished,
+            valueRange = minSeconds.toFloat()..maxSeconds.toFloat(),
+            steps = (maxSeconds - minSeconds) / stepSeconds - 1,
+        )
+    }
+}
+
+@Composable
 private fun CreditsContent(
     version: String,
     onOpenSource: () -> Unit,
@@ -898,7 +1091,7 @@ private fun ScannerOverlay(
     showTorch: Boolean,
     showImage: Boolean,
     onPickImage: () -> Unit,
-    onShowInfo: () -> Unit,
+    onShowSettings: () -> Unit,
 ) {
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
@@ -923,14 +1116,20 @@ private fun ScannerOverlay(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 FilledTonalButton(
-                    onClick = onShowInfo,
+                    onClick = onShowSettings,
                     colors = ButtonDefaults.filledTonalButtonColors(
                         containerColor = Color.Black.copy(alpha = 0.45f),
                         contentColor = Color.White,
                     ),
                     contentPadding = PaddingValues(horizontal = 14.dp),
                 ) {
-                    Text("Thông tin")
+                    Icon(
+                        painter = painterResource(R.drawable.ic_settings),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Cài đặt")
                 }
 
                 if (showTorch) {

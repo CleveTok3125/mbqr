@@ -8,8 +8,9 @@ Android QR scanner that hands a VietQR transfer to the MB Bank app.
    a full-resolution capture, or a gallery image.
 2. Builds the text that the MB transfer hub understands:
    `<bank> <account> <amount in thousands> [merchant name]`.
-3. Copies that text to the clipboard and opens `mbbank://?ad_dp=transfer`.
-4. Clears the clipboard after 60 seconds, or immediately when the app is
+3. Shows the transfer sheet by default. Confirming copies that text to the
+   clipboard and opens `mbbank://?ad_dp=transfer`.
+4. Clears the clipboard after the configured expiry, or immediately when the app is
    removed from recents.
 
 ## Demo
@@ -17,7 +18,14 @@ Android QR scanner that hands a VietQR transfer to the MB Bank app.
 Screenshot from demo mode, with the system status bar hidden:
 
 <p>
-  <img src="docs/scanner.png" alt="Scanner screen" width="320">
+  <img src="docs/demo-scanner.jpg" alt="Scanner screen" width="260">
+  <img src="docs/demo-confirm.jpg" alt="Transfer confirmation" width="260">
+  <img src="docs/demo-missing-mb.jpg" alt="MB Bank missing" width="260">
+</p>
+<p>
+  <img src="docs/demo-unsupported-bank.jpg" alt="Unsupported bank" width="260">
+  <img src="docs/demo-invalid-crc.jpg" alt="Invalid CRC" width="260">
+  <img src="docs/demo-not-vietqr.jpg" alt="Not a VietQR" width="260">
 </p>
 
 ## Supported input
@@ -97,12 +105,17 @@ Required repository secrets:
 
 ## Controls
 
-- **Thông tin**: app credits, version, source, and license.
+- **Cài đặt**: confirmation switch for the MB handoff and clipboard expiry
+  (15–300 seconds, default 60). **Thông tin** opens app credits, version,
+  source, and license.
 - **Đèn**: torch. **Ảnh**: scan an image from the gallery.
-- **Arc dial**: CameraX zoom. Drags below the arc are mirrored. Haptics tick at
-  minor marks and stronger at `1x/2x/4x/8x`.
+- **Arc dial**: CameraX zoom from `1x` to the camera maximum. Major ticks are
+  powers of two plus the endpoints; minor ticks divide each interval. The final
+  tail continues the same octave grid to the next power of two and clips at the
+  maximum. Drags below the arc are mirrored. Haptics tick at minor marks and are
+  stronger at major ticks, including the endpoints.
 - **Shutter**: full-resolution capture for distant codes.
-- **Clipboard pill**: tap to copy the last text again and restart the 60-second
+- **Clipboard pill**: tap to copy the last text again and restart the configured
   timer; long-press to clear the app-managed entry immediately.
 
 ## Behavior notes
@@ -112,19 +125,25 @@ Required repository secrets:
   opened in a browser when the content is a plain HTTP(S) URL.
 - If MB Bank is not installed, a parsed transfer sheet is shown instead of a
   raw payload. It keeps the copy, share, and scan-again actions.
-- The VietQR merchant name is metadata, not the account holder name. It may be
-  a bank name or be absent. MB resolves the recipient name separately, so the
-  app appends the merchant name as-is without assuming it is the recipient name.
+- Confirmation is enabled by default. The parsed transfer sheet is shown before
+  the handoff. The clipboard is written and the configured timer starts only
+  after **Mở MB Bank** is pressed, so the clipboard is ready before MB opens.
+  Disable the switch to copy and open MB Bank immediately.
+- The only name in the QR is the merchant name field. It may be the account
+  holder name, a bank name, or absent. The app appends it as-is when present;
+  MB resolves the actual recipient name separately.
 - The copied text contains only the bank prefix, account, amount, and merchant
   name; content, city, MCC, and service code are not appended.
 - Demo mode: tap the version line five times in the credits dialog. It hides
-  the system status bar, shows the full controls over a static background, and
-  loops the clipboard countdown. The gallery button only shows a demo message.
+  the system status bar, shows the full controls over a static background, uses
+  a `1x–25x` dial, and loops the clipboard countdown. The shutter and gallery
+  buttons step through synthetic scan cases. Sheet actions are no-ops; **Quét
+  tiếp**, swipe down, or back closes the sheet.
 - The amount is rounded to two decimal places of the thousands value.
 - After a successful handoff the camera stops and a clipboard countdown is
   shown; tap **Quét mã khác** to scan another code.
 - Paste the copied text into the MB hub with a long-press. Transfer content is
   entered manually.
 - The foreground service only runs while the clipboard entry is alive. It stops
-  when the one-minute timer expires or when the task is removed from recents.
+  when the configured timer expires or when the task is removed from recents.
 - No internet permission, no analytics, no background jobs.

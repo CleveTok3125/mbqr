@@ -24,7 +24,7 @@ import vn.io.elsutm.mbqr.handoff.ClipboardHandoff
 import vn.io.elsutm.mbqr.handoff.ClipboardSession
 
 /**
- * Keeps the transfer text on the clipboard for at most one minute, then clears
+ * Keeps the transfer text on the clipboard for the configured time, then clears
  * it. The service is also stopped immediately when the task is removed from
  * recents so the app never keeps running in the background.
  */
@@ -52,10 +52,13 @@ class ClipboardExpiryService : Service() {
         // clear the clipboard early.
         expiryJob?.cancel()
         expectedText = text
-        startInForeground()
+        val expiryMillis = intent
+            .getLongExtra(EXTRA_EXPIRY_MILLIS, DEFAULT_EXPIRY_MILLIS)
+            .coerceAtLeast(MIN_EXPIRY_MILLIS)
+        startInForeground(expiryMillis)
 
         expiryJob = scope.launch {
-            delay(EXPIRY_MILLIS)
+            delay(expiryMillis)
             clearAndStop()
         }
 
@@ -74,11 +77,16 @@ class ClipboardExpiryService : Service() {
         super.onDestroy()
     }
 
-    private fun startInForeground() {
+    private fun startInForeground(expiryMillis: Long) {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_clipboard)
             .setContentTitle(getString(R.string.clipboard_notification_title))
-            .setContentText(getString(R.string.clipboard_notification_text))
+            .setContentText(
+                getString(
+                    R.string.clipboard_notification_text,
+                    (expiryMillis / 1_000L).toInt(),
+                ),
+            )
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setOngoing(true)
@@ -122,15 +130,18 @@ class ClipboardExpiryService : Service() {
     }
 
     companion object {
-        const val EXPIRY_MILLIS = 60_000L
+        const val DEFAULT_EXPIRY_MILLIS = 60_000L
 
+        private const val MIN_EXPIRY_MILLIS = 1_000L
         private const val CHANNEL_ID = "clipboard_expiry"
         private const val NOTIFICATION_ID = 1001
         private const val EXTRA_TEXT = "extra_text"
+        private const val EXTRA_EXPIRY_MILLIS = "extra_expiry_millis"
 
-        fun start(context: Context, text: String) {
+        fun start(context: Context, text: String, expiryMillis: Long) {
             val intent = Intent(context, ClipboardExpiryService::class.java)
                 .putExtra(EXTRA_TEXT, text)
+                .putExtra(EXTRA_EXPIRY_MILLIS, expiryMillis)
             ContextCompat.startForegroundService(context, intent)
         }
     }

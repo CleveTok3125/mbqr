@@ -3,6 +3,6 @@
     <string name="app_name">MBQR</string>
     <string name="clipboard_channel_name">Clipboard expiry</string>
     <string name="clipboard_notification_title">Transfer info is on the clipboard</string>
-    <string name="clipboard_notification_text">Clears automatically after 60 seconds</string>
+    <string name="clipboard_notification_text">Clears automatically after %1$d seconds</string>
     <string name="share_qr_title">Chia sẻ QR</string>
 </resources>

@@ -5,8 +5,8 @@ package vn.io.elsutm.mbqr.vietqr
  * `<bank> <account> <amount in thousands> <merchant name>`.
  *
  * The hub resolves the recipient name itself. The merchant name is metadata and
- * may be ignored; it is not treated as the account holder name. The app appends
- * only the merchant name; content, city, MCC, and service code are not appended.
+ * may be absent or generic. The app appends it as-is when present; content,
+ * city, MCC, and service code are not appended.
  */
 object TransferBuilder {
 
