@@ -71,7 +71,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -92,7 +91,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import vn.io.elsutm.mbqr.BuildConfig
 import vn.io.elsutm.mbqr.R
 import vn.io.elsutm.mbqr.camera.PhotoQrDecoder
@@ -102,10 +100,13 @@ import vn.io.elsutm.mbqr.handoff.MbLauncher
 import vn.io.elsutm.mbqr.handoff.QrActions
 import vn.io.elsutm.mbqr.handoff.UrlDetector
 import vn.io.elsutm.mbqr.service.ClipboardExpiryService
-import vn.io.elsutm.mbqr.vietqr.BankBin
+import vn.io.elsutm.mbqr.vietqr.BankDirectory
 import vn.io.elsutm.mbqr.vietqr.TransferBuilder
+import vn.io.elsutm.mbqr.vietqr.VietQrData
 import vn.io.elsutm.mbqr.vietqr.VietQrParseResult
 import vn.io.elsutm.mbqr.vietqr.VietQrParser
+import java.text.NumberFormat
+import java.util.Locale
 import java.util.concurrent.Executors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -114,7 +115,6 @@ fun ScannerScreen() {
     val context = LocalContext.current
     val view = LocalView.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
     var cameraGranted by remember { mutableStateOf(hasCameraPermission(context)) }
     var cameraError by rememberSaveable { mutableStateOf<String?>(null) }
@@ -123,6 +123,7 @@ fun ScannerScreen() {
     var torchOn by rememberSaveable { mutableStateOf(false) }
     var sheetRaw by rememberSaveable { mutableStateOf<String?>(null) }
     var sheetReason by rememberSaveable { mutableStateOf("") }
+    var sheetParsed by rememberSaveable { mutableStateOf(false) }
     var clipboardExpiresAt by rememberSaveable { mutableStateOf(0L) }
     var clipboardRemaining by rememberSaveable { mutableStateOf(0) }
     var lastClipboardText by remember { mutableStateOf(ClipboardSession.text) }
@@ -221,32 +222,50 @@ fun ScannerScreen() {
     fun showRaw(raw: String, reason: String) {
         scanningEnabled = false
         sheetRaw = VietQrParser.normalized(raw)
+        sheetParsed = false
+        sheetReason = reason
+    }
+
+    fun showParsed(raw: String, reason: String) {
+        scanningEnabled = false
+        sheetRaw = VietQrParser.normalized(raw)
+        sheetParsed = true
         sheetReason = reason
     }
 
     fun handleDecoded(raw: String) {
         if (!scanningEnabled) return
 
-        // Any decoded QR is a scan success: either the sheet or the MB handoff follows.
+        // Any decoded QR is a scan success: either a sheet or the MB handoff follows.
         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
 
         when (val result = VietQrParser.parse(raw)) {
             is VietQrParseResult.VietQr -> {
                 val data = result.data
-                val bankPrefix = BankBin.transferPrefix(data.bankBin)
+                if (!result.crcValid) {
+                    showRaw(raw, "CRC không hợp lệ")
+                    return
+                }
 
-                when {
-                    !result.crcValid -> showRaw(raw, "CRC không hợp lệ")
-                    bankPrefix == null -> showRaw(raw, "Chưa hỗ trợ ngân hàng BIN ${data.bankBin}")
-                    else -> {
-                        scanningEnabled = false
-                        val transferText = TransferBuilder.build(data, bankPrefix)
-                        copyTransfer(transferText)
-                        if (!MbLauncher.open(context)) {
-                            scanningEnabled = true
-                            scope.launch { snackbarHostState.showSnackbar("Không mở được MB Bank") }
-                        }
-                    }
+                val transferText = BankDirectory.find(data.bankBin)
+                    ?.prefix
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { TransferBuilder.build(data, it) }
+
+                if (!MbLauncher.isInstalled(context)) {
+                    showParsed(raw, "Chưa cài MB Bank")
+                    return
+                }
+
+                if (transferText == null) {
+                    showParsed(raw, "Chưa hỗ trợ ngân hàng BIN ${data.bankBin}")
+                    return
+                }
+
+                scanningEnabled = false
+                copyTransfer(transferText)
+                if (!MbLauncher.open(context)) {
+                    showParsed(raw, "Không mở được MB Bank")
                 }
             }
 
@@ -492,134 +511,81 @@ fun ScannerScreen() {
 
     val raw = sheetRaw
     if (raw != null) {
+        val parsed = remember(raw) {
+            (VietQrParser.parse(raw) as? VietQrParseResult.VietQr)?.data
+        }
+        val transferText = remember(parsed) {
+            parsed?.let { data ->
+                BankDirectory.find(data.bankBin)
+                    ?.prefix
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { TransferBuilder.build(data, it) }
+            }
+        }
         ModalBottomSheet(
             onDismissRequest = {
                 sheetRaw = null
                 scanningEnabled = true
             },
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(text = sheetReason, style = MaterialTheme.typography.titleLarge)
-                SelectionContainer {
-                    Text(
-                        text = raw,
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier
-                            .heightIn(max = 220.dp)
-                            .verticalScroll(rememberScrollState()),
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Button(
-                        onClick = {
-                            copyTransfer(raw)
-                            sheetRaw = null
-                            scanningEnabled = true
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_copy),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Sao chép")
-                    }
-                    FilledTonalButton(
-                        onClick = {
-                            if (!QrActions.shareText(context, raw)) {
-                                Toast.makeText(
-                                    context,
-                                    "Không có ứng dụng để chia sẻ",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_share),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Chia sẻ")
-                    }
-                }
-
-                if (UrlDetector.isHttpUrl(raw)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        FilledTonalButton(
-                            onClick = {
-                                if (!QrActions.openHttpUrl(context, raw)) {
-                                    Toast.makeText(
-                                        context,
-                                        "Không có ứng dụng để mở liên kết",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            ),
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_open_in_new),
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Mở liên kết")
+            if (sheetParsed && parsed != null) {
+                ParsedQrSheetContent(
+                    reason = sheetReason,
+                    data = parsed,
+                    bankName = BankDirectory.find(parsed.bankBin)?.shortName,
+                    transferText = transferText,
+                    onCopy = {
+                        copyTransfer(transferText ?: raw)
+                        sheetRaw = null
+                        scanningEnabled = true
+                    },
+                    onShare = {
+                        val text = transferText ?: raw
+                        if (!QrActions.shareText(context, text)) {
+                            Toast.makeText(
+                                context,
+                                "Không có ứng dụng để chia sẻ",
+                                Toast.LENGTH_SHORT,
+                            ).show()
                         }
-                        OutlinedButton(
-                            onClick = {
-                                sheetRaw = null
-                                scanningEnabled = true
-                            },
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_arrow_forward),
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Quét tiếp")
+                    },
+                    onScanAgain = {
+                        sheetRaw = null
+                        scanningEnabled = true
+                    },
+                )
+            } else {
+                RawQrSheetContent(
+                    reason = sheetReason,
+                    raw = raw,
+                    onCopy = {
+                        copyTransfer(raw)
+                        sheetRaw = null
+                        scanningEnabled = true
+                    },
+                    onShare = {
+                        if (!QrActions.shareText(context, raw)) {
+                            Toast.makeText(
+                                context,
+                                "Không có ứng dụng để chia sẻ",
+                                Toast.LENGTH_SHORT,
+                            ).show()
                         }
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = {
-                            sheetRaw = null
-                            scanningEnabled = true
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_arrow_forward),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Quét tiếp")
-                    }
-                }
+                    },
+                    onOpenLink = {
+                        if (!QrActions.openHttpUrl(context, raw)) {
+                            Toast.makeText(
+                                context,
+                                "Không có ứng dụng để mở liên kết",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
+                    onScanAgain = {
+                        sheetRaw = null
+                        scanningEnabled = true
+                    },
+                )
             }
         }
     }
@@ -655,6 +621,193 @@ fun ScannerScreen() {
         )
     }
 }
+
+@Composable
+private fun ParsedQrSheetContent(
+    reason: String,
+    data: VietQrData,
+    bankName: String?,
+    transferText: String?,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onScanAgain: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(text = reason, style = MaterialTheme.typography.titleLarge)
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ParsedField(label = "Ngân hàng", value = bankName ?: "BIN ${data.bankBin}")
+            ParsedField(label = "Tài khoản", value = data.account)
+            data.amountVnd?.let { ParsedField(label = "Số tiền", value = formatVnd(it)) }
+            data.merchantName?.let { ParsedField(label = "Tên đơn vị", value = it) }
+            data.content?.let { ParsedField(label = "Nội dung", value = it) }
+        }
+
+        transferText?.let { text ->
+            SelectionContainer {
+                Text(
+                    text = text,
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .heightIn(max = 120.dp)
+                        .verticalScroll(rememberScrollState()),
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Button(onClick = onCopy, modifier = Modifier.weight(1f)) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_copy),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Sao chép")
+            }
+            FilledTonalButton(onClick = onShare, modifier = Modifier.weight(1f)) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_share),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Chia sẻ")
+            }
+        }
+
+        OutlinedButton(onClick = onScanAgain, modifier = Modifier.fillMaxWidth()) {
+            Icon(
+                painter = painterResource(R.drawable.ic_arrow_forward),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Quét tiếp")
+        }
+    }
+}
+
+@Composable
+private fun ParsedField(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(text = value, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun RawQrSheetContent(
+    reason: String,
+    raw: String,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onOpenLink: () -> Unit,
+    onScanAgain: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(text = reason, style = MaterialTheme.typography.titleLarge)
+        SelectionContainer {
+            Text(
+                text = raw,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .heightIn(max = 220.dp)
+                    .verticalScroll(rememberScrollState()),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Button(onClick = onCopy, modifier = Modifier.weight(1f)) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_copy),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Sao chép")
+            }
+            FilledTonalButton(onClick = onShare, modifier = Modifier.weight(1f)) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_share),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Chia sẻ")
+            }
+        }
+
+        if (UrlDetector.isHttpUrl(raw)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                FilledTonalButton(
+                    onClick = onOpenLink,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_open_in_new),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Mở liên kết")
+                }
+                OutlinedButton(onClick = onScanAgain, modifier = Modifier.weight(1f)) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_arrow_forward),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Quét tiếp")
+                }
+            }
+        } else {
+            OutlinedButton(onClick = onScanAgain, modifier = Modifier.fillMaxWidth()) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_arrow_forward),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Quét tiếp")
+            }
+        }
+    }
+}
+
+private fun formatVnd(amount: Long): String =
+    NumberFormat.getNumberInstance(Locale.forLanguageTag("vi-VN")).format(amount) + " ₫"
 
 @Composable
 private fun CreditsContent(

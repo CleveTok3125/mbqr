@@ -4,7 +4,7 @@ data class VietQrData(
     val bankBin: String,
     val account: String,
     val amountVnd: Long?,
-    val recipientName: String?,
+    val merchantName: String?,
     val content: String?,
 )
 
@@ -25,6 +25,7 @@ object VietQrParser {
     private const val NAPAS_GUID = "A000000727"
     private const val VND_CURRENCY = "704"
     private const val FORMAT_INDICATOR = "01"
+    private const val MERCHANT_NAME_TAG = "59"
 
     fun parse(raw: String): VietQrParseResult {
         val payload = normalize(raw)
@@ -70,7 +71,7 @@ object VietQrParser {
             bankBin = bankBin,
             account = account,
             amountVnd = amount,
-            recipientName = fields.value("59")?.takeIf { it.isNotBlank() },
+            merchantName = fields.value(MERCHANT_NAME_TAG)?.takeIf { it.isNotBlank() },
             content = fields.value("62")
                 ?.let(TlvParser::parse)
                 ?.value("08")

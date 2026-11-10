@@ -14,6 +14,9 @@ object MbLauncher {
     private const val PACKAGE = "com.mbmobile"
     private const val TRANSFER_DEEPLINK = "mbbank://?ad_dp=transfer"
 
+    fun isInstalled(context: Context): Boolean =
+        context.packageManager.getLaunchIntentForPackage(PACKAGE) != null
+
     fun open(context: Context): Boolean {
         val deeplink = Intent(Intent.ACTION_VIEW, TRANSFER_DEEPLINK.toUri()).apply {
             setPackage(PACKAGE)

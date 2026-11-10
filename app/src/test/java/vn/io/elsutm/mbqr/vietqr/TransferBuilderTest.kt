@@ -7,7 +7,7 @@ class TransferBuilderTest {
 
     @Test
     fun `builds transfer string with account only`() {
-        val data = data(amount = null, name = null)
+        val data = data(amount = null, merchantName = null)
 
         assertEquals("MB 0941196908", TransferBuilder.build(data, "MB"))
     }
@@ -20,8 +20,8 @@ class TransferBuilderTest {
     }
 
     @Test
-    fun `appends recipient name`() {
-        val data = data(amount = 1_000, name = "NGUYEN VAN A")
+    fun `appends merchant name`() {
+        val data = data(amount = 1_000, merchantName = "NGUYEN VAN A")
 
         assertEquals(
             "MB 0941196908 1.0 NGUYEN VAN A",
@@ -30,24 +30,61 @@ class TransferBuilderTest {
     }
 
     @Test
-    fun `appends recipient name without amount`() {
-        val data = data(amount = null, name = "NGUYEN VAN A")
+    fun `appends merchant name without amount`() {
+        val data = data(amount = null, merchantName = "NGUYEN VAN A")
 
         assertEquals("MB 0941196908 NGUYEN VAN A", TransferBuilder.build(data, "MB"))
     }
 
     @Test
-    fun `collapses whitespace in recipient name`() {
-        val data = data(amount = null, name = "  NGUYEN \n VAN   A ")
+    fun `collapses whitespace in merchant name`() {
+        val data = data(amount = null, merchantName = "  NGUYEN \n VAN   A ")
 
         assertEquals("MB 0941196908 NGUYEN VAN A", TransferBuilder.build(data, "MB"))
     }
 
-    private fun data(amount: Long? = null, name: String? = null) = VietQrData(
-        bankBin = "970422",
-        account = "0941196908",
+    @Test
+    fun `builds an interbank transfer with the directory prefix`() {
+        val data = data(
+            bankBin = "970407",
+            account = "00000000000001",
+            amount = 1_000_000,
+            merchantName = "TCB",
+        )
+
+        assertEquals(
+            "TCB 00000000000001 1000.0 TCB",
+            TransferBuilder.build(data, "TCB"),
+        )
+    }
+
+    @Test
+    fun `does not append content or transfer metadata`() {
+        val data = data(
+            bankBin = "970407",
+            account = "00000000000001",
+            amount = 1_000_000,
+            merchantName = "TCB",
+            content = "test",
+        )
+
+        assertEquals(
+            "TCB 00000000000001 1000.0 TCB",
+            TransferBuilder.build(data, "TCB"),
+        )
+    }
+
+    private fun data(
+        bankBin: String = "970422",
+        account: String = "0941196908",
+        amount: Long? = null,
+        merchantName: String? = null,
+        content: String? = null,
+    ) = VietQrData(
+        bankBin = bankBin,
+        account = account,
         amountVnd = amount,
-        recipientName = name,
-        content = null,
+        merchantName = merchantName,
+        content = content,
     )
 }

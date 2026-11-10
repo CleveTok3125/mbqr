@@ -7,7 +7,7 @@ Android QR scanner that hands a VietQR transfer to the MB Bank app.
 1. Scans a VietQR (NAPAS EMVCo) code with CameraX and ZXing from the camera,
    a full-resolution capture, or a gallery image.
 2. Builds the text that the MB transfer hub understands:
-   `MB <account> <amount in thousands> [recipient name]`.
+   `<bank> <account> <amount in thousands> [merchant name]`.
 3. Copies that text to the clipboard and opens `mbbank://?ad_dp=transfer`.
 4. Clears the clipboard after 60 seconds, or immediately when the app is
    removed from recents.
@@ -24,8 +24,26 @@ Screenshot from demo mode, with the system status bar hidden:
 
 - VietQR payloads with the NAPAS provider (`A000000727`).
 - VND currency only. Amounts below 5 VND are rejected.
-- MB Bank BIN `970422`. Other BINs are shown as a raw payload with a copy
-  button instead of being handed off.
+- Any bank BIN in the bundled VietQR directory. The directory is generated
+  from `https://api.vietqr.io/v2/banks`; the app never requests it at runtime.
+- Raw payloads are shown only when the QR is not a supported VietQR, has an
+  invalid CRC, or cannot be tied to a bank prefix.
+
+## Bank directory
+
+`BankDirectory.kt` is generated from the public VietQR bank list:
+
+```sh
+python3 tools/update_banks.py
+```
+
+The generated file is committed. Builds do not access the network, and the
+app keeps no internet permission. The generator validates BIN shape, rejects
+control/format characters and duplicate BINs, and refuses an unexpectedly
+short bank list.
+
+A scheduled workflow runs on the first day of each month and opens or updates
+a pull request when the directory changes.
 
 ## Build
 
@@ -67,6 +85,8 @@ Required repository secrets:
 ## Manual runs
 
 - **CI**: Actions -> `ci` -> Run workflow.
+- **Update banks**: Actions -> `update-banks` -> Run workflow. It opens or
+  updates the bank directory pull request if the API data changed.
 - **Release smoke**: Actions -> `release` -> Run workflow with `publish`
   disabled. The signed APK and checksums are uploaded as artifacts without
   creating a release.
@@ -88,6 +108,13 @@ Required repository secrets:
 - Scanning starts as soon as camera permission is granted.
 - Raw payloads that are not a supported VietQR can be copied, shared, or
   opened in a browser when the content is a plain HTTP(S) URL.
+- If MB Bank is not installed, a parsed transfer sheet is shown instead of a
+  raw payload. It keeps the copy, share, and scan-again actions.
+- The VietQR merchant name is metadata, not the account holder name. It may be
+  a bank name or be absent. MB resolves the recipient name separately, so the
+  app appends the merchant name as-is without assuming it is the recipient name.
+- The copied text contains only the bank prefix, account, amount, and merchant
+  name; content, city, MCC, and service code are not appended.
 - Demo mode: tap the version line five times in the credits dialog. It hides
   the system status bar, shows the full controls over a static background, and
   loops the clipboard countdown. The gallery button only shows a demo message.
