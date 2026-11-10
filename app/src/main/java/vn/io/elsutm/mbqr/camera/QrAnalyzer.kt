@@ -41,7 +41,7 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
     }
 
     private var lastAttemptAt = 0L
-    private var lastDecoded: String? = null
+    private val decodeGuard = DecodeGuard()
     private var loggedFirstFrame = false
     private var lastFailureLogAt = 0L
 
@@ -62,9 +62,7 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
             if (now - lastAttemptAt < THROTTLE_MILLIS) return
             lastAttemptAt = now
 
-            val text = decode(image) ?: return
-            if (text == lastDecoded) return
-            lastDecoded = text
+            val text = decodeGuard.accept(decode(image)) ?: return
             Log.d(TAG, "decoded payload length=${text.length}")
             onDecoded(text)
         } catch (error: Exception) {
@@ -77,8 +75,8 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
         }
     }
 
-    fun resetDuplicateGuard() {
-        lastDecoded = null
+    fun resetDuplicateGuard(requireFreshFrame: Boolean = false) {
+        decodeGuard.reset(requireFreshFrame)
     }
 
     private fun decode(image: ImageProxy): String? {

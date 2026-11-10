@@ -65,8 +65,11 @@ fun CameraPreview(
     }
 
     LaunchedEffect(scanningEnabled) {
+        val wasEnabled = analyzer.enabled
         analyzer.enabled = scanningEnabled
-        if (scanningEnabled) analyzer.resetDuplicateGuard()
+        if (scanningEnabled) {
+            analyzer.resetDuplicateGuard(requireFreshFrame = !wasEnabled)
+        }
     }
 
     var camera by remember { mutableStateOf<Camera?>(null) }
