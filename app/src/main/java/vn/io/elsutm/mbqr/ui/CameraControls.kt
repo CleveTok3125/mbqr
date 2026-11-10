@@ -34,6 +34,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 @Composable
@@ -141,25 +142,35 @@ private fun ZoomDial(
                     awaitEachGesture {
                         val down = awaitFirstDown()
                         val downAngle = mappedAngle(size, down.position, pivotFromBottomPx)
+                        val downRatio = ZoomMapping.ratioForAngle(
+                            downAngle,
+                            minZoom,
+                            maxZoom,
+                        )
                         var lastAngle: Float? = null
 
                         if (downAngle in arcStart..arcEnd) {
-                            view.performHapticFeedback(HAPTIC_MAJOR)
                             lastAngle = downAngle
                         }
-                        onZoomChange(ZoomMapping.ratioForAngle(downAngle, minZoom, maxZoom))
+                        view.performHapticFeedback(HAPTIC_MAJOR)
+                        onZoomChange(downRatio)
+                        var previousRatio = downRatio
 
                         do {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull() ?: break
                             val angle = mappedAngle(size, change.position, pivotFromBottomPx)
+                            val ratio = ZoomMapping.ratioForAngle(angle, minZoom, maxZoom)
 
                             if (angle !in arcStart..arcEnd) {
-                                // Gaps beside the arc clamp the thumb but stay silent.
+                                // Gaps beside the arc clamp the thumb but still
+                                // report the boundary when the clamp changes it.
+                                if (crossedEndpoint(previousRatio, ratio, minZoom, maxZoom)) {
+                                    view.performHapticFeedback(HAPTIC_MAJOR)
+                                }
                                 lastAngle = null
-                                onZoomChange(
-                                    ZoomMapping.ratioForAngle(angle, minZoom, maxZoom),
-                                )
+                                previousRatio = ratio
+                                onZoomChange(ratio)
                                 change.consume()
                                 continue
                             }
@@ -167,22 +178,26 @@ private fun ZoomDial(
                             val previous = lastAngle
                             if (previous == null) {
                                 lastAngle = angle
-                                onZoomChange(
-                                    ZoomMapping.ratioForAngle(angle, minZoom, maxZoom),
-                                )
+                                previousRatio = ratio
+                                onZoomChange(ratio)
                                 change.consume()
                                 continue
                             }
 
-                            val crossed = strongestCrossedTick(previous, angle, ticks)
-                            if (crossed != null) {
-                                view.performHapticFeedback(
-                                    if (crossed.major) HAPTIC_MAJOR else HAPTIC_MINOR,
-                                )
+                            if (crossedEndpoint(previousRatio, ratio, minZoom, maxZoom)) {
+                                view.performHapticFeedback(HAPTIC_MAJOR)
+                            } else {
+                                val crossed = strongestCrossedTick(previous, angle, ticks)
+                                if (crossed != null) {
+                                    view.performHapticFeedback(
+                                        if (crossed.major) HAPTIC_MAJOR else HAPTIC_MINOR,
+                                    )
+                                }
                             }
 
                             lastAngle = angle
-                            onZoomChange(ZoomMapping.ratioForAngle(angle, minZoom, maxZoom))
+                            previousRatio = ratio
+                            onZoomChange(ratio)
                             change.consume()
                         } while (event.changes.any { it.pressed })
                     }
@@ -212,22 +227,21 @@ private fun ZoomDial(
                 style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round),
             )
 
-            // Minor ticks every 10 degrees, radial so they point at the shutter center.
-            var minorAngle = ZoomMapping.START_ANGLE + 7f
-            while (minorAngle < ZoomMapping.START_ANGLE + ZoomMapping.SWEEP_ANGLE) {
+            // Minor ticks divide each major interval into equal log steps.
+            val majors = ZoomTicks.majorTicks(minZoom, maxZoom)
+            ZoomTicks.minorTicks(majors).forEach { ratio ->
                 drawRadialTick(
                     center = center,
                     radius = radius,
-                    angleDegrees = minorAngle,
+                    angleDegrees = ZoomMapping.angleForRatio(ratio, minZoom, maxZoom),
                     innerOffset = 4.dp.toPx(),
                     outerOffset = 4.dp.toPx(),
                     strokeWidth = 1.dp.toPx(),
                     color = Color.White.copy(alpha = 0.45f),
                 )
-                minorAngle += 10f
             }
 
-            zoomTicks(minZoom, maxZoom).forEach { ratio ->
+            majors.forEach { ratio ->
                 drawRadialTick(
                     center = center,
                     radius = radius,
@@ -309,19 +323,36 @@ private fun mappedAngle(
 
 private data class DialTick(val angle: Float, val major: Boolean)
 
+internal fun crossedEndpoint(
+    previousRatio: Float,
+    currentRatio: Float,
+    minRatio: Float,
+    maxRatio: Float,
+): Boolean {
+    if (currentRatio <= minRatio && previousRatio > minRatio) return true
+    if (currentRatio >= maxRatio && previousRatio < maxRatio) return true
+    return false
+}
+
 private fun dialTicks(minZoom: Float, maxZoom: Float): List<DialTick> {
-    val ticks = mutableListOf<DialTick>()
-    var angle = ZoomMapping.START_ANGLE + MINOR_OFFSET_DEGREES
-    val end = ZoomMapping.START_ANGLE + ZoomMapping.SWEEP_ANGLE
-    while (angle < end) {
-        ticks += DialTick(angle, major = false)
-        angle += MINOR_STEP_DEGREES
-    }
-    zoomTicks(minZoom, maxZoom).forEach { ratio ->
-        ticks += DialTick(
-            angle = ZoomMapping.angleForRatio(ratio, minZoom, maxZoom),
-            major = true,
-        )
+    val majors = ZoomTicks.majorTicks(minZoom, maxZoom)
+    val ticks = buildList {
+        ZoomTicks.minorTicks(majors).forEach { ratio ->
+            add(
+                DialTick(
+                    angle = ZoomMapping.angleForRatio(ratio, minZoom, maxZoom),
+                    major = false,
+                ),
+            )
+        }
+        majors.forEach { ratio ->
+            add(
+                DialTick(
+                    angle = ZoomMapping.angleForRatio(ratio, minZoom, maxZoom),
+                    major = true,
+                ),
+            )
+        }
     }
     return ticks.sortedBy { it.angle }
 }
@@ -338,21 +369,11 @@ private fun strongestCrossedTick(
         .maxByOrNull { if (it.major) 1 else 0 }
 }
 
-private fun zoomTicks(minZoom: Float, maxZoom: Float): List<Float> {
-    val ticks = mutableListOf(minZoom, maxZoom)
-    listOf(1f, 2f, 4f, 8f).forEach { ratio ->
-        if (ratio > minZoom && ratio < maxZoom) ticks += ratio
-    }
-    return ticks.distinct().sorted()
-}
-
 private fun formatZoom(ratio: Float): String {
-    val rounded = max(1, (ratio * 10).toInt())
+    val rounded = max(1, (ratio * 10).roundToInt())
     return if (rounded % 10 == 0) "${rounded / 10}x" else "${rounded / 10}.${rounded % 10}x"
 }
 
 private val PIVOT_FROM_BOTTOM = 42.dp
 private val HAPTIC_MAJOR = HapticFeedbackConstants.CLOCK_TICK
 private val HAPTIC_MINOR = HapticFeedbackConstants.KEYBOARD_TAP
-private const val MINOR_STEP_DEGREES = 10f
-private const val MINOR_OFFSET_DEGREES = 7f
