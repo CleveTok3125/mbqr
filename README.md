@@ -1,15 +1,18 @@
 # MBQR
 
-Android QR scanner that hands a VietQR transfer to the MB Bank app.
+Android QR scanner that hands a VietQR transfer to the MB Bank app and parses
+common QR formats.
 
 ## What it does
 
-1. Scans a VietQR (NAPAS EMVCo) code from the camera, a full-resolution capture,
-   a gallery image, or one image shared from another app.
-2. Builds `<bank> <account> <amount in thousands> [merchant name]`.
+1. Scans a QR code from the camera, a full-resolution capture, a gallery image,
+   or one image shared from another app.
+2. Builds `<bank> <account> <amount in thousands> [merchant name]` for VietQR.
 3. Shows the transfer sheet by default. Confirming copies the text and opens
    `mbbank://?ad_dp=transfer`.
-4. Clears the clipboard after the configured timer, or on task removal while the
+4. Shows parsed details for Wi-Fi, contacts, email, phone, SMS, location, ISBN,
+   and links.
+5. Clears the clipboard after the configured timer, or on task removal while the
    timer is active.
 
 ## Demo
@@ -22,18 +25,22 @@ Android QR scanner that hands a VietQR transfer to the MB Bank app.
 <p>
   <img src="docs/demo-unsupported-bank.jpg" alt="Unsupported bank" width="260">
   <img src="docs/demo-invalid-crc.jpg" alt="Invalid CRC" width="260">
-  <img src="docs/demo-not-vietqr.jpg" alt="Not a VietQR" width="260">
+  <img src="docs/demo-not-vietqr.jpg" alt="Link QR" width="260">
 </p>
 
 ## Supported input
 
 - VietQR with the NAPAS provider (`A000000727`).
+- Wi-Fi (`WIFI:`), vCard/MECARD/BIZCARD, email, phone, SMS/MMS, location, ISBN,
+  and HTTP(S) links.
 - VND only; amounts below 5 VND are rejected.
 - Any BIN in the bundled directory. The directory is generated from
   `https://api.vietqr.io/v2/banks`; the app never requests it at runtime.
-- Non-VietQR or invalid-CRC QRs open a raw sheet. Raw sheets can copy/share, and
-  open plain HTTP(S) payloads in a browser. An unsupported bank keeps the parsed
-  sheet and previews the raw payload for copy.
+- Formats are detected from specific to generic, so `mailto:` and `sms:` are not
+  treated as links and `WIFI:` is not treated as text.
+- Invalid-CRC VietQR and plain text open a raw sheet. Raw sheets can copy/share,
+  and open plain HTTP(S) payloads in a browser. An unsupported bank keeps the
+  parsed sheet and previews the raw payload for copy.
 
 ## Bank directory
 
@@ -65,6 +72,14 @@ keyPassword=...
 
 The release workflow reads `KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
 and `KEY_PASSWORD` from CI secrets instead.
+
+## Testing
+
+```sh
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+```
+
+Manual QR fixtures with expected results are in [`test-qr/`](test-qr/).
 
 ## Release
 
@@ -99,6 +114,8 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 - **Shutter**: full-resolution capture.
 - **Clipboard pill**: tap to copy again and restart the timer when enabled;
   long-press to clear.
+- **Parsed fields**: long-press any field to copy its value. Amounts copy as raw
+  digits, such as `10000`.
 
 ## Behavior
 
@@ -111,6 +128,16 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
   requested.
 - The merchant-name field is appended only when present; MB resolves the
   recipient separately.
+
+### Other QR formats
+
+- Wi-Fi shows network name, security, password, and hidden-network state. It is
+  parsed only; the app does not connect or request Wi-Fi permissions.
+- Contacts, email, phone, SMS, location, and ISBN show parsed fields without
+  launching another app.
+- HTTP(S) links appear as a link sheet with **Mở liên kết**.
+- Every parsed field supports long-press copy. Field copies use the clipboard
+  timer.
 
 ### MB handoff
 
@@ -139,13 +166,15 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 - Tap the version line five times in credits. Demo reflects the current clipboard
   and confirmation settings and draws the scan-frame boundary; demo cases are
   not filtered by that frame.
+- Demo cycles transfer, missing-MB, unsupported-bank, invalid-CRC, Wi-Fi, contact,
+  and link cases.
 - With confirmation off, handoff-ready cases only show a demo toast. Sheet actions
-  are no-ops; **Quét tiếp**, swipe down, or back closes.
+  and field copies are no-ops; **Quét tiếp**, swipe down, or back closes.
 
 ### Privacy
 
 - No internet permission, analytics, or background work beyond the clipboard
-  timer.
+  timer. Parsing is local; a link opens only when the user taps it.
 
 ## License
 
