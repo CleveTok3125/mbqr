@@ -4,19 +4,15 @@ Android QR scanner that hands a VietQR transfer to the MB Bank app.
 
 ## What it does
 
-1. Scans a VietQR (NAPAS EMVCo) code with CameraX and ZXing from the camera,
-   a full-resolution capture, a gallery image, or an image shared from another
-   app.
-2. Builds the text that the MB transfer hub understands:
-   `<bank> <account> <amount in thousands> [merchant name]`.
-3. Shows the transfer sheet by default. Confirming copies that text to the
-   clipboard and opens `mbbank://?ad_dp=transfer`.
-4. Clears the clipboard after the configured expiry, or immediately when the app is
-   removed from recents.
+1. Scans a VietQR (NAPAS EMVCo) code from the camera, a full-resolution capture,
+   a gallery image, or one image shared from another app.
+2. Builds `<bank> <account> <amount in thousands> [merchant name]`.
+3. Shows the transfer sheet by default. Confirming copies the text and opens
+   `mbbank://?ad_dp=transfer`.
+4. Clears the clipboard after the configured timer, or on task removal while the
+   timer is active.
 
 ## Demo
-
-Screenshot from demo mode, with the system status bar hidden:
 
 <p>
   <img src="docs/demo-scanner.jpg" alt="Scanner screen" width="260">
@@ -31,30 +27,26 @@ Screenshot from demo mode, with the system status bar hidden:
 
 ## Supported input
 
-- VietQR payloads with the NAPAS provider (`A000000727`).
-- VND currency only. Amounts below 5 VND are rejected.
-- Any bank BIN in the bundled VietQR directory. The directory is generated
-  from `https://api.vietqr.io/v2/banks`; the app never requests it at runtime.
-- Raw payloads are shown only when the QR is not a supported VietQR, has an
-  invalid CRC, or cannot be tied to a bank prefix.
+- VietQR with the NAPAS provider (`A000000727`).
+- VND only; amounts below 5 VND are rejected.
+- Any BIN in the bundled directory. The directory is generated from
+  `https://api.vietqr.io/v2/banks`; the app never requests it at runtime.
+- Non-VietQR or invalid-CRC QRs open a raw sheet. Raw sheets can copy/share, and
+  open plain HTTP(S) payloads in a browser. An unsupported bank keeps the parsed
+  sheet and previews the raw payload for copy.
 
 ## Bank directory
 
-`BankDirectory.kt` is generated from the public VietQR bank list:
+`BankDirectory.kt` is generated from the public VietQR list:
 
 ```sh
 python3 tools/update_banks.py
 ```
 
-The generated file is committed. Builds do not access the network, and the
-app keeps no internet permission. The generator validates BIN shape, rejects
-control/format characters and duplicate BINs, and refuses an unexpectedly
-short bank list.
-
-A scheduled workflow runs on the first day of each month and opens or updates
-a pull request when the directory changes. The repository must allow GitHub
-Actions to create pull requests. Pull requests opened with `GITHUB_TOKEN` may
-not start `ci`; run it manually or push a follow-up commit when required.
+The file is committed. Builds do not access the network. The generator validates
+BIN shape, control characters, duplicates, and minimum list size. A monthly
+workflow updates it; the repository must allow Actions to open PRs, and PRs
+opened with `GITHUB_TOKEN` may not start CI.
 
 ## Build
 
@@ -62,7 +54,7 @@ not start `ci`; run it manually or push a follow-up commit when required.
 ./gradlew :app:assembleDebug
 ```
 
-Release builds use `keystore.properties` when it exists:
+Release builds use `keystore.properties` when present:
 
 ```properties
 storeFile=release.jks
@@ -76,82 +68,85 @@ and `KEY_PASSWORD` from CI secrets instead.
 
 ## Release
 
-Push a tag:
-
 ```sh
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow builds a signed `arm64-v8a` APK and publishes it with a
-`SHA256SUMS` file.
+The workflow builds a signed `arm64-v8a` APK and publishes it with
+`SHA256SUMS`.
 
-Required repository secrets:
-
-- `KEYSTORE_BASE64`
-- `KEYSTORE_PASSWORD`
-- `KEY_ALIAS`
-- `KEY_PASSWORD`
+Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
+`KEY_ALIAS`, `KEY_PASSWORD`.
 
 ## Manual runs
 
 - **CI**: Actions -> `ci` -> Run workflow.
-- **Update banks**: Actions -> `update-banks` -> Run workflow. It opens or
-  updates the bank directory pull request if the API data changed.
+- **Update banks**: Actions -> `update-banks` -> Run workflow; updates the
+  directory PR when API data changes.
 - **Release smoke**: Actions -> `release` -> Run workflow with `publish`
-  disabled. The signed APK and checksums are uploaded as artifacts without
-  creating a release.
-- Enabling `publish` on a manual run creates a release tagged
-  `smoke-<run-number>`.
+  disabled; uploads the signed APK and checksums without a release.
+- `publish` on a manual run creates a release tagged `smoke-<run-number>`.
 
 ## Controls
 
-- **Cài đặt**: confirmation switch for the MB handoff and clipboard expiry
-  (15–300 seconds, default 60). **Thông tin** opens app credits, version,
-  source, and license.
-- **Đèn**: torch. **Ảnh**: scan an image from the gallery. MBQR also accepts
-  one image shared from another app's share sheet.
-- **Arc dial**: CameraX zoom from `1x` to the camera maximum. Major ticks are
-  powers of two plus the endpoints; minor ticks divide each interval. The final
-  tail continues the same octave grid to the next power of two and clips at the
-  maximum. Drags below the arc are mirrored. Haptics tick at minor marks and are
-  stronger at major ticks, including the endpoints.
-- **Shutter**: full-resolution capture for distant codes.
-- **Clipboard pill**: tap to copy the last text again and restart the configured
-  timer; long-press to clear the app-managed entry immediately.
+- **Cài đặt**: confirmation; scan-inside-frame with margin `0–100%` (default
+  `50`); clipboard expiry `0` = off, otherwise `15–300s` in 15s steps
+  (default `60`). **Thông tin** opens credits, version, source, and license.
+- **Đèn / Ảnh**: torch; scan a gallery image or one image shared from another app.
+- **Arc dial**: zoom `1x` to camera max; ticks at powers of two, minor ticks per
+  interval, final tail clipped at max; haptics at ticks and endpoints.
+- **Shutter**: full-resolution capture.
+- **Clipboard pill**: tap to copy again and restart the timer when enabled;
+  long-press to clear.
 
-## Behavior notes
+## Behavior
 
-- Scanning starts as soon as camera permission is granted.
-- Raw payloads that are not a supported VietQR can be copied, shared, or
-  opened in a browser when the content is a plain HTTP(S) URL.
-- If MB Bank is not installed, a parsed transfer sheet is shown instead of a
-  raw payload. It keeps the copy, share, and scan-again actions.
-- Confirmation is enabled by default. The parsed transfer sheet is shown before
-  the handoff. The clipboard is written and the configured timer starts only
-  after **Mở MB Bank** is pressed, so the clipboard is ready before MB opens.
-  Disable the switch to copy and open MB Bank immediately.
-- If MB Bank does not come to the foreground within 5 seconds, the paused screen
-  shows **Mở MB Bank** again. If the retry also fails, it shows **Mở xác nhận
-  chuyển khoản**; that button reopens the normal transfer sheet for manual copy
-  and paste.
-- Shared images are decoded once from the URI granted by the sending app. The
-  app does not request gallery or storage permission for this flow.
-- The only name in the QR is the merchant name field. It may be the account
-  holder name, a bank name, or absent. The app appends it as-is when present;
-  MB resolves the actual recipient name separately.
-- The copied text contains only the bank prefix, account, amount, and merchant
-  name; content, city, MCC, and service code are not appended.
-- Demo mode: tap the version line five times in the credits dialog. It hides
-  the system status bar, shows the full controls over a static background, uses
-  a `1x–25x` dial, and loops the clipboard countdown. The shutter and gallery
-  buttons step through synthetic scan cases. Sheet actions are no-ops; **Quét
-  tiếp**, swipe down, or back closes the sheet.
-- The amount is rounded to two decimal places of the thousands value.
-- After a successful handoff the camera stops and a clipboard countdown is
-  shown; tap **Quét mã khác** to scan another code.
-- Paste the copied text into the MB hub with a long-press. Transfer content is
-  entered manually.
-- The foreground service only runs while the clipboard entry is alive. It stops
-  when the configured timer expires or when the task is removed from recents.
-- No internet permission, no analytics, no background jobs.
+### Scanning
+
+- **Chỉ quét QR trong khung** is off by default. When on, live camera frames are
+  cropped to the frame plus a margin (0–100% of the tightest gap). Shutter,
+  gallery, and shared images scan the full image.
+- Shared images use the sender's URI once; no gallery or storage permission is
+  requested.
+- The merchant-name field is appended only when present; MB resolves the
+  recipient separately.
+
+### MB handoff
+
+- Without MB Bank, the parsed sheet still offers copy, share, and scan again.
+- Confirmation is on by default. The clipboard is written before MB opens; a
+  non-zero timer starts then. Off copies and opens MB immediately.
+- If MB does not foreground within 5 seconds, the paused screen offers **Mở MB
+  Bank**. A second failure reopens the normal transfer sheet via **Mở xác nhận
+  chuyển khoản**.
+- Supported transfers copy only the bank prefix, account, amount, and merchant
+  name. Unsupported banks copy the raw payload.
+- Amounts are rounded to two decimal places of the thousands value.
+- Paste into the MB hub with a long-press; transfer content is manual.
+
+### Clipboard
+
+- Timer `0` disables auto-clear and the foreground service. The clipboard stays
+  until it is overwritten or cleared manually.
+- A non-zero timer clears the clipboard on expiry or task removal. The pill can
+  restart the timer or clear the entry immediately.
+- After handoff, the camera stops and shows a countdown or persistent indicator;
+  **Quét mã khác** restarts scanning.
+
+### Demo behavior
+
+- Tap the version line five times in credits. Demo reflects the current clipboard
+  and confirmation settings and draws the scan-frame boundary; demo cases are
+  not filtered by that frame.
+- With confirmation off, handoff-ready cases only show a demo toast. Sheet actions
+  are no-ops; **Quét tiếp**, swipe down, or back closes.
+
+### Privacy
+
+- No internet permission, analytics, or background work beyond the clipboard
+  timer.
+
+## License
+
+GPL-3.0. See `LICENSE`.
