@@ -21,6 +21,18 @@ class DemoScanCasesTest {
     }
 
     @Test
+    fun `handoff readiness and confirmation drive demo sheets`() {
+        val ready = case("Xác nhận chuyển khoản")
+        assertTrue(ready.handoffReady)
+        assertTrue(ready.shouldShowDemoSheet(confirmBeforeOpeningMb = true))
+        assertFalse(ready.shouldShowDemoSheet(confirmBeforeOpeningMb = false))
+
+        val missingMb = case("Chưa cài MB Bank")
+        assertFalse(missingMb.handoffReady)
+        assertTrue(missingMb.shouldShowDemoSheet(confirmBeforeOpeningMb = false))
+    }
+
+    @Test
     fun `supported demo payload parses with synthetic fields`() {
         val data = VietQrParser.parse(
             case("Xác nhận chuyển khoản").raw,

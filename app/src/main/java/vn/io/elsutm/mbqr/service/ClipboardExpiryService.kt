@@ -26,13 +26,15 @@ import vn.io.elsutm.mbqr.handoff.ClipboardSession
 /**
  * Keeps the transfer text on the clipboard for the configured time, then clears
  * it. The service is also stopped immediately when the task is removed from
- * recents so the app never keeps running in the background.
+ * recents so the app never keeps running in the background. A CANCEL action
+ * stops the timer without clearing the current clipboard entry.
  */
 class ClipboardExpiryService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var expectedText: String? = null
     private var expiryJob: Job? = null
+    private var cancelled = false
 
     override fun onCreate() {
         super.onCreate()
@@ -42,6 +44,15 @@ class ClipboardExpiryService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_CANCEL) {
+            expiryJob?.cancel()
+            cancelled = true
+            expectedText = null
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         val text = intent?.getStringExtra(EXTRA_TEXT)
         if (text.isNullOrEmpty()) {
             stopSelf()
@@ -52,6 +63,7 @@ class ClipboardExpiryService : Service() {
         // clear the clipboard early.
         expiryJob?.cancel()
         expectedText = text
+        cancelled = false
         val expiryMillis = intent
             .getLongExtra(EXTRA_EXPIRY_MILLIS, DEFAULT_EXPIRY_MILLIS)
             .coerceAtLeast(MIN_EXPIRY_MILLIS)
@@ -59,7 +71,7 @@ class ClipboardExpiryService : Service() {
 
         expiryJob = scope.launch {
             delay(expiryMillis)
-            clearAndStop()
+            if (!cancelled) clearAndStop()
         }
 
         return START_NOT_STICKY
@@ -67,7 +79,12 @@ class ClipboardExpiryService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         expiryJob?.cancel()
-        clearAndStop()
+        if (cancelled) {
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        } else {
+            clearAndStop()
+        }
         super.onTaskRemoved(rootIntent)
     }
 
@@ -111,7 +128,9 @@ class ClipboardExpiryService : Service() {
     private fun clearClipboard() {
         val text = expectedText ?: return
         ClipboardHandoff.clearIfMatches(this, text)
-        ClipboardSession.text = null
+        if (ClipboardSession.text == text) {
+            ClipboardSession.text = null
+        }
         expectedText = null
     }
 
@@ -137,12 +156,19 @@ class ClipboardExpiryService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val EXTRA_TEXT = "extra_text"
         private const val EXTRA_EXPIRY_MILLIS = "extra_expiry_millis"
+        private const val ACTION_CANCEL = "cancel_expiry"
 
         fun start(context: Context, text: String, expiryMillis: Long) {
             val intent = Intent(context, ClipboardExpiryService::class.java)
                 .putExtra(EXTRA_TEXT, text)
                 .putExtra(EXTRA_EXPIRY_MILLIS, expiryMillis)
             ContextCompat.startForegroundService(context, intent)
+        }
+
+        fun cancel(context: Context) {
+            context.startService(
+                Intent(context, ClipboardExpiryService::class.java).setAction(ACTION_CANCEL),
+            )
         }
     }
 }

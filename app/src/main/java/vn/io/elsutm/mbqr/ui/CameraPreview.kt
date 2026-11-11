@@ -8,6 +8,7 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
 import androidx.camera.core.ZoomState
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -24,12 +25,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Observer
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import vn.io.elsutm.mbqr.camera.QrAnalyzer
+import vn.io.elsutm.mbqr.camera.ScanCrop
 import java.util.concurrent.Executors
 
 @Composable
@@ -42,6 +45,7 @@ fun CameraPreview(
     onCameraBound: (Camera?) -> Unit = {},
     onImageCaptureBound: (ImageCapture?) -> Unit = {},
     onZoomStateChanged: (ZoomState) -> Unit = {},
+    scanCrop: ScanCrop? = null,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -60,8 +64,12 @@ fun CameraPreview(
     val currentOnImageCaptureBound by rememberUpdatedState(onImageCaptureBound)
     val currentOnZoomStateChanged by rememberUpdatedState(onZoomStateChanged)
 
+    var previewWidth by remember { mutableStateOf(0) }
+    var previewHeight by remember { mutableStateOf(0) }
+
     SideEffect {
         analyzer.onDecoded = { text -> mainExecutor.execute { currentOnDecoded(text) } }
+        analyzer.setScanCrop(scanCrop, previewWidth, previewHeight)
     }
 
     LaunchedEffect(scanningEnabled) {
@@ -86,14 +94,26 @@ fun CameraPreview(
                     val resolvedProvider = providerFuture.get()
                     provider = resolvedProvider
 
-                    val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
-                    }
+                    val preview = Preview.Builder()
+                        .setResolutionSelector(
+                            ResolutionSelector.Builder()
+                                .setAspectRatioStrategy(
+                                    AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY,
+                                )
+                                .build(),
+                        )
+                        .build()
+                        .also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
+                        }
                     val analysis = ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                         .setResolutionSelector(
                             ResolutionSelector.Builder()
+                                .setAspectRatioStrategy(
+                                    AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY,
+                                )
                                 .setResolutionStrategy(
                                     ResolutionStrategy(
                                         Size(1280, 720),
@@ -165,14 +185,19 @@ fun CameraPreview(
 
     AndroidView(
         factory = { previewView },
-        modifier = modifier.pointerInput(camera) {
-            detectTapGestures { offset ->
-                val activeCamera = camera ?: return@detectTapGestures
-                val point = previewView.meteringPointFactory.createPoint(offset.x, offset.y)
-                activeCamera.cameraControl.startFocusAndMetering(
-                    FocusMeteringAction.Builder(point).build(),
-                )
+        modifier = modifier
+            .onSizeChanged { size ->
+                previewWidth = size.width
+                previewHeight = size.height
             }
-        },
+            .pointerInput(camera) {
+                detectTapGestures { offset ->
+                    val activeCamera = camera ?: return@detectTapGestures
+                    val point = previewView.meteringPointFactory.createPoint(offset.x, offset.y)
+                    activeCamera.cameraControl.startFocusAndMetering(
+                        FocusMeteringAction.Builder(point).build(),
+                    )
+                }
+            },
     )
 }

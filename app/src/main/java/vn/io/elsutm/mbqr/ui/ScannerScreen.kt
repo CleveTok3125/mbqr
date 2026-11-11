@@ -19,6 +19,7 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -79,7 +80,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -101,6 +107,7 @@ import kotlinx.coroutines.delay
 import vn.io.elsutm.mbqr.BuildConfig
 import vn.io.elsutm.mbqr.R
 import vn.io.elsutm.mbqr.camera.PhotoQrDecoder
+import vn.io.elsutm.mbqr.camera.ScanCrop
 import vn.io.elsutm.mbqr.handoff.ClipboardHandoff
 import vn.io.elsutm.mbqr.handoff.ClipboardSession
 import vn.io.elsutm.mbqr.handoff.MbLauncher
@@ -116,7 +123,6 @@ import vn.io.elsutm.mbqr.vietqr.VietQrParser
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.concurrent.Executors
-import kotlin.math.roundToInt
 
 private const val MB_REDIRECT_TIMEOUT_MS = 5_000L
 
@@ -145,6 +151,12 @@ fun ScannerScreen(
     var sheetParsed by rememberSaveable { mutableStateOf(false) }
     var clipboardExpiresAt by rememberSaveable { mutableStateOf(0L) }
     var clipboardRemaining by rememberSaveable { mutableStateOf(0) }
+    var clipboardPersistent by rememberSaveable {
+        mutableStateOf(
+            ClipboardSession.text != null &&
+                AppSettings.clipboardExpirySeconds(context) == AppSettings.CLIPBOARD_TIMER_OFF_SECONDS,
+        )
+    }
     var lastClipboardText by remember { mutableStateOf(ClipboardSession.text) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showCredits by rememberSaveable { mutableStateOf(false) }
@@ -153,6 +165,10 @@ fun ScannerScreen(
     }
     var clipboardExpirySeconds by remember {
         mutableStateOf(AppSettings.clipboardExpirySeconds(context))
+    }
+    var scanInsideFrame by remember { mutableStateOf(AppSettings.scanInsideFrame(context)) }
+    var scanFrameMarginPercent by remember {
+        mutableStateOf(AppSettings.scanFrameMarginPercent(context))
     }
     var demoMode by remember { mutableStateOf(false) }
     var demoCountdown by remember { mutableStateOf(60) }
@@ -189,7 +205,11 @@ fun ScannerScreen(
         if (!cameraGranted) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    LaunchedEffect(clipboardExpiresAt) {
+    LaunchedEffect(clipboardExpiresAt, clipboardPersistent) {
+        if (clipboardPersistent) {
+            clipboardRemaining = 0
+            return@LaunchedEffect
+        }
         while (true) {
             val remaining = clipboardExpiresAt - SystemClock.elapsedRealtime()
             clipboardRemaining = ((remaining + 999) / 1000).coerceAtLeast(0).toInt()
@@ -198,12 +218,16 @@ fun ScannerScreen(
         }
     }
 
-    LaunchedEffect(demoMode) {
+    LaunchedEffect(demoMode, clipboardExpirySeconds) {
         if (!demoMode) return@LaunchedEffect
-        demoCountdown = 60
+        if (clipboardExpirySeconds == AppSettings.CLIPBOARD_TIMER_OFF_SECONDS) {
+            demoCountdown = 0
+            return@LaunchedEffect
+        }
+        demoCountdown = clipboardExpirySeconds
         while (true) {
             delay(1_000)
-            demoCountdown = if (demoCountdown <= 1) 60 else demoCountdown - 1
+            demoCountdown = if (demoCountdown <= 1) clipboardExpirySeconds else demoCountdown - 1
         }
     }
 
@@ -231,11 +255,27 @@ fun ScannerScreen(
 
     fun copyTransfer(text: String) {
         val expiryMillis = AppSettings.clipboardExpiryMillis(context)
+        if (expiryMillis <= 0L) {
+            // Stop an older timer without clearing the text we are about to copy.
+            ClipboardExpiryService.cancel(context)
+        }
         ClipboardHandoff.copy(context, text)
-        ClipboardExpiryService.start(context, text, expiryMillis)
+        if (expiryMillis > 0L) {
+            ClipboardExpiryService.start(context, text, expiryMillis)
+        }
         ClipboardSession.text = text
         lastClipboardText = text
-        clipboardExpiresAt = SystemClock.elapsedRealtime() + expiryMillis
+        clipboardPersistent = expiryMillis <= 0L
+        clipboardExpiresAt = if (expiryMillis > 0L) {
+            SystemClock.elapsedRealtime() + expiryMillis
+        } else {
+            0L
+        }
+        clipboardRemaining = if (expiryMillis > 0L) {
+            ((expiryMillis + 999) / 1_000L).toInt()
+        } else {
+            0
+        }
     }
 
     fun restoreClipboard() {
@@ -245,11 +285,30 @@ fun ScannerScreen(
         Toast.makeText(context, "Đã copy lại", Toast.LENGTH_SHORT).show()
     }
 
+    fun commitClipboardExpiry(seconds: Int) {
+        val boundedSeconds = AppSettings.boundedExpirySeconds(seconds)
+        AppSettings.setClipboardExpirySeconds(context, boundedSeconds)
+        if (boundedSeconds == AppSettings.CLIPBOARD_TIMER_OFF_SECONDS) {
+            ClipboardExpiryService.cancel(context)
+            clipboardPersistent = lastClipboardText != null
+            clipboardExpiresAt = 0L
+            clipboardRemaining = 0
+        } else if (lastClipboardText != null && (clipboardPersistent || clipboardRemaining > 0)) {
+            val text = lastClipboardText ?: return
+            val expiryMillis = boundedSeconds * 1_000L
+            ClipboardExpiryService.start(context, text, expiryMillis)
+            clipboardPersistent = false
+            clipboardExpiresAt = SystemClock.elapsedRealtime() + expiryMillis
+            clipboardRemaining = boundedSeconds
+        }
+    }
+
     fun clearClipboardNow() {
         val text = ClipboardSession.text ?: lastClipboardText ?: return
         ClipboardHandoff.clearIfMatches(context, text)
         ClipboardSession.text = null
         lastClipboardText = null
+        clipboardPersistent = false
         clipboardExpiresAt = 0L
         clipboardRemaining = 0
         context.stopService(Intent(context, ClipboardExpiryService::class.java))
@@ -275,6 +334,10 @@ fun ScannerScreen(
         val case = DEMO_SCAN_CASES[demoCaseIndex % DEMO_SCAN_CASES.size]
         demoCaseIndex = (demoCaseIndex + 1) % DEMO_SCAN_CASES.size
         demoCaseMbInstalled = case.mbInstalled
+        if (!case.shouldShowDemoSheet(confirmBeforeOpeningMb)) {
+            Toast.makeText(context, "Đang trong chế độ demo", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (case.parsed) {
             showParsed(case.raw, case.reason)
         } else {
@@ -508,6 +571,7 @@ fun ScannerScreen(
                     val pending = pendingHandoff
                     PausedContent(
                         clipboardRemaining = clipboardRemaining,
+                        clipboardPersistent = clipboardPersistent,
                         reminder = when (handoffPhase) {
                             HandoffPhase.Retry -> "MB Bank chưa mở?"
                             HandoffPhase.Final -> "Không mở được MB Bank. Thao tác thủ công?"
@@ -554,6 +618,34 @@ fun ScannerScreen(
                         val availableBelowFrame = (bottom - frameBottom).coerceAtLeast(0.dp)
                         val controlsMargin = ((availableBelowFrame - 190.dp) / 2f)
                             .coerceAtLeast(16.dp)
+                        val scanCrop = if (scanInsideFrame) {
+                            val horizontalSpace = ((maxWidth - frameSize) / 2f)
+                                .coerceAtLeast(0.dp)
+                            val topSpace = (frameCenterY - frameSize / 2f)
+                                .coerceAtLeast(0.dp)
+                            val bottomSpace = (maxHeight - frameCenterY - frameSize / 2f)
+                                .coerceAtLeast(0.dp)
+                            // Scale the tightest gap so the boundary stays centered
+                            // and never leaves the viewport.
+                            val minGap = minOf(horizontalSpace, topSpace, bottomSpace)
+                            val margin = scanMargin(minGap, scanFrameMarginPercent)
+                            val left = ((maxWidth - frameSize) / 2f - margin)
+                                .coerceAtLeast(0.dp)
+                            val top = (frameCenterY - frameSize / 2f - margin)
+                                .coerceAtLeast(0.dp)
+                            val right = (left + frameSize + margin * 2)
+                                .coerceAtMost(maxWidth)
+                            val bottom = (top + frameSize + margin * 2)
+                                .coerceAtMost(maxHeight)
+                            ScanCrop(
+                                left = left.value / maxWidth.value,
+                                top = top.value / maxHeight.value,
+                                right = right.value / maxWidth.value,
+                                bottom = bottom.value / maxHeight.value,
+                            )
+                        } else {
+                            null
+                        }
 
                         if (demoMode) {
                             Image(
@@ -577,6 +669,7 @@ fun ScannerScreen(
                                         zoomMax = state.maxZoomRatio
                                         zoomRatio = state.zoomRatio
                                     },
+                                    scanCrop = scanCrop,
                                 )
                             }
                         }
@@ -585,10 +678,19 @@ fun ScannerScreen(
                             torchOn = torchOn,
                             onToggleTorch = { torchOn = !torchOn },
                             clipboardRemaining = if (demoMode) demoCountdown else clipboardRemaining,
+                            clipboardPersistent = if (demoMode) {
+                                clipboardExpirySeconds == AppSettings.CLIPBOARD_TIMER_OFF_SECONDS
+                            } else {
+                                clipboardPersistent
+                            },
                             onRestoreClipboard = when {
                                 demoMode -> {
                                     {
-                                        demoCountdown = 60
+                                        demoCountdown = if (clipboardExpirySeconds > 0) {
+                                            clipboardExpirySeconds
+                                        } else {
+                                            0
+                                        }
                                         view.performHapticFeedback(
                                             HapticFeedbackConstants.CLOCK_TICK,
                                         )
@@ -606,6 +708,7 @@ fun ScannerScreen(
                             },
                             frameSize = frameSize,
                             frameOffsetY = -maxHeight * 0.05f,
+                            scanCrop = scanCrop,
                             showTorch = true,
                             showImage = true,
                             onPickImage = {
@@ -780,7 +883,10 @@ fun ScannerScreen(
             onDismissRequest = { showSettings = false },
             title = { Text("Cài đặt") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     HideDialogStatusBar(demoMode)
                     SettingsToggle(
                         label = "Hiện bảng xác nhận trước khi mở MB Bank",
@@ -790,11 +896,33 @@ fun ScannerScreen(
                             AppSettings.setConfirmBeforeOpeningMb(context, enabled)
                         },
                     )
+                    SettingsToggle(
+                        label = "Chỉ quét QR trong khung",
+                        checked = scanInsideFrame,
+                        onCheckedChange = { enabled ->
+                            scanInsideFrame = enabled
+                            AppSettings.setScanInsideFrame(context, enabled)
+                        },
+                    )
+                    if (scanInsideFrame) {
+                        ScanFrameMarginSetting(
+                            percent = scanFrameMarginPercent,
+                            onPercentChange = { percent ->
+                                scanFrameMarginPercent = percent
+                            },
+                            onPercentChangeFinished = {
+                                AppSettings.setScanFrameMarginPercent(
+                                    context,
+                                    scanFrameMarginPercent,
+                                )
+                            },
+                        )
+                    }
                     ClipboardExpirySetting(
                         seconds = clipboardExpirySeconds,
                         onSecondsChange = { seconds -> clipboardExpirySeconds = seconds },
                         onSecondsChangeFinished = {
-                            AppSettings.setClipboardExpirySeconds(context, clipboardExpirySeconds)
+                            commitClipboardExpiry(clipboardExpirySeconds)
                         },
                     )
                 }
@@ -1077,12 +1205,48 @@ private fun SettingsToggle(
 }
 
 @Composable
+private fun ScanFrameMarginSetting(
+    percent: Int,
+    onPercentChange: (Int) -> Unit,
+    onPercentChangeFinished: () -> Unit,
+) {
+    val maxPercent = AppSettings.MAX_SCAN_FRAME_MARGIN_PERCENT
+    val stepPercent = AppSettings.SCAN_FRAME_MARGIN_STEP_PERCENT
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Lề vùng quét",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                text = "$percent%",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Slider(
+            value = percent.toFloat(),
+            onValueChange = { value ->
+                onPercentChange(AppSettings.snappedScanFrameMarginPercent(value))
+            },
+            onValueChangeFinished = onPercentChangeFinished,
+            valueRange = 0f..maxPercent.toFloat(),
+            steps = maxPercent / stepPercent - 1,
+        )
+    }
+}
+
+@Composable
 private fun ClipboardExpirySetting(
     seconds: Int,
     onSecondsChange: (Int) -> Unit,
     onSecondsChangeFinished: () -> Unit,
 ) {
-    val minSeconds = AppSettings.MIN_CLIPBOARD_EXPIRY_SECONDS
     val maxSeconds = AppSettings.MAX_CLIPBOARD_EXPIRY_SECONDS
     val stepSeconds = AppSettings.CLIPBOARD_EXPIRY_STEP_SECONDS
 
@@ -1097,17 +1261,23 @@ private fun ClipboardExpirySetting(
                 style = MaterialTheme.typography.bodyLarge,
             )
             Text(
-                text = "$seconds giây",
+                text = if (seconds == AppSettings.CLIPBOARD_TIMER_OFF_SECONDS) {
+                    "Không tự xoá"
+                } else {
+                    "$seconds giây"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Slider(
             value = seconds.toFloat(),
-            onValueChange = { onSecondsChange(it.roundToInt()) },
+            onValueChange = { value ->
+                onSecondsChange(AppSettings.snappedSliderExpirySeconds(value))
+            },
             onValueChangeFinished = onSecondsChangeFinished,
-            valueRange = minSeconds.toFloat()..maxSeconds.toFloat(),
-            steps = (maxSeconds - minSeconds) / stepSeconds - 1,
+            valueRange = 0f..maxSeconds.toFloat(),
+            steps = maxSeconds / stepSeconds - 1,
         )
     }
 }
@@ -1194,18 +1364,49 @@ private fun ScannerOverlay(
     torchOn: Boolean,
     onToggleTorch: () -> Unit,
     clipboardRemaining: Int,
+    clipboardPersistent: Boolean,
     onRestoreClipboard: (() -> Unit)?,
     onClearClipboard: (() -> Unit)?,
     frameSize: Dp,
     frameOffsetY: Dp,
+    scanCrop: ScanCrop?,
     showTorch: Boolean,
     showImage: Boolean,
     onPickImage: () -> Unit,
     onShowSettings: () -> Unit,
 ) {
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val clipboardLabel = when {
+        clipboardRemaining > 0 -> "Clipboard còn ${clipboardRemaining}s"
+        clipboardPersistent -> "Clipboard không tự xoá"
+        else -> null
+    }
+    val scanBoundaryColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
 
     Box(modifier = Modifier.fillMaxSize()) {
+        scanCrop?.let { crop ->
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val left = crop.left * size.width
+                val top = crop.top * size.height
+                val right = crop.right * size.width
+                val bottom = crop.bottom * size.height
+                if (right > left && bottom > top) {
+                    drawRoundRect(
+                        color = scanBoundaryColor,
+                        topLeft = Offset(left, top),
+                        size = Size(right - left, bottom - top),
+                        cornerRadius = CornerRadius(32.dp.toPx()),
+                        style = Stroke(
+                            width = 1.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(
+                                intervals = floatArrayOf(8.dp.toPx(), 6.dp.toPx()),
+                            ),
+                        ),
+                    )
+                }
+            }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1268,15 +1469,15 @@ private fun ScannerOverlay(
                 }
             }
 
-            if (showImage || clipboardRemaining > 0) {
+            if (showImage || clipboardLabel != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
                 ) {
-                    if (clipboardRemaining > 0) {
+                    clipboardLabel?.let { label ->
                         Text(
-                            text = "Clipboard còn ${clipboardRemaining}s",
+                            text = label,
                             color = Color.White,
                             style = MaterialTheme.typography.labelMedium,
                             modifier = Modifier
@@ -1339,6 +1540,7 @@ private fun ScannerOverlay(
 @Composable
 private fun PausedContent(
     clipboardRemaining: Int,
+    clipboardPersistent: Boolean,
     reminder: String?,
     openLabel: String,
     onOpen: (() -> Unit)?,
@@ -1359,10 +1561,10 @@ private fun PausedContent(
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = if (clipboardRemaining > 0) {
-                "Clipboard tự xoá sau ${clipboardRemaining}s"
-            } else {
-                "Clipboard đã được xoá"
+            text = when {
+                clipboardPersistent -> "Clipboard không tự xoá"
+                clipboardRemaining > 0 -> "Clipboard tự xoá sau ${clipboardRemaining}s"
+                else -> "Clipboard đã được xoá"
             },
             style = MaterialTheme.typography.bodyMedium,
             color = Color.White.copy(alpha = 0.75f),

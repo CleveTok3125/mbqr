@@ -29,6 +29,9 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
     @Volatile
     var enabled: Boolean = true
 
+    @Volatile
+    private var cropViewport = CropViewport(crop = null, viewWidth = 0, viewHeight = 0)
+
     private val reader = MultiFormatReader().apply {
         setHints(
             mapOf(
@@ -79,6 +82,10 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
         decodeGuard.reset(requireFreshFrame)
     }
 
+    fun setScanCrop(crop: ScanCrop?, viewWidth: Int, viewHeight: Int) {
+        cropViewport = CropViewport(crop, viewWidth, viewHeight)
+    }
+
     private fun decode(image: ImageProxy): String? {
         val plane = image.planes.firstOrNull() ?: return null
         val width = image.width
@@ -86,7 +93,31 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
         if (width <= 0 || height <= 0) return null
 
         val luminance = extractLuminance(width, height, plane)
-        val source = PlanarYUVLuminanceSource(luminance, width, height, 0, 0, width, height, false)
+        val viewport = cropViewport
+        val pixelCrop = viewport.crop?.let { crop ->
+            ScanCropMapper.map(
+                crop = crop,
+                viewWidth = viewport.viewWidth,
+                viewHeight = viewport.viewHeight,
+                imageWidth = width,
+                imageHeight = height,
+                rotationDegrees = image.imageInfo.rotationDegrees,
+            )
+        }
+        val source = if (pixelCrop != null) {
+            PlanarYUVLuminanceSource(
+                luminance,
+                width,
+                height,
+                pixelCrop.left,
+                pixelCrop.top,
+                pixelCrop.width,
+                pixelCrop.height,
+                false,
+            )
+        } else {
+            PlanarYUVLuminanceSource(luminance, width, height, 0, 0, width, height, false)
+        }
 
         // QR detection is rotation independent; skipping the rotation copy keeps
         // analysis fast enough to run on every throttled frame.
@@ -150,3 +181,9 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
         const val LOG_INTERVAL_MILLIS = 2_000L
     }
 }
+
+private data class CropViewport(
+    val crop: ScanCrop?,
+    val viewWidth: Int,
+    val viewHeight: Int,
+)

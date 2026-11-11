@@ -5,6 +5,7 @@ internal data class DemoScanCase(
     val raw: String,
     val parsed: Boolean,
     val mbInstalled: Boolean,
+    val handoffReady: Boolean,
 )
 
 /**
@@ -18,6 +19,7 @@ internal val DEMO_SCAN_CASES = listOf(
             "QRIBFTTA53037045802VN5405100005915NGUYEN VAN MUOI62080804DEMO6304B5C2",
         parsed = true,
         mbInstalled = true,
+        handoffReady = true,
     ),
     DemoScanCase(
         reason = "Chưa cài MB Bank",
@@ -25,6 +27,7 @@ internal val DEMO_SCAN_CASES = listOf(
             "QRIBFTTA53037045802VN5405100005915NGUYEN VAN MUOI62080804DEMO6304B5C2",
         parsed = true,
         mbInstalled = false,
+        handoffReady = false,
     ),
     DemoScanCase(
         reason = "Chưa hỗ trợ ngân hàng",
@@ -32,6 +35,7 @@ internal val DEMO_SCAN_CASES = listOf(
             "QRIBFTTA53037045802VN5405100005915NGUYEN VAN MUOI62080804DEMO630440DC",
         parsed = true,
         mbInstalled = false,
+        handoffReady = false,
     ),
     DemoScanCase(
         reason = "CRC không hợp lệ",
@@ -39,11 +43,16 @@ internal val DEMO_SCAN_CASES = listOf(
             "QRIBFTTA53037045802VN5405100005915NGUYEN VAN MUOI62080804DEMO6304B5C1",
         parsed = false,
         mbInstalled = false,
+        handoffReady = false,
     ),
     DemoScanCase(
         reason = "Không phải VietQR",
         raw = "https://example.com/demo",
         parsed = false,
         mbInstalled = false,
+        handoffReady = false,
     ),
 )
+
+internal fun DemoScanCase.shouldShowDemoSheet(confirmBeforeOpeningMb: Boolean): Boolean =
+    confirmBeforeOpeningMb || !handoffReady
