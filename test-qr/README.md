@@ -24,3 +24,6 @@ Synthetic QR codes for manual testing.
 Check that long-press on each parsed field copies its value. On
 `01-vietqr-valid.png`, long-press `Số tiền` and confirm the clipboard contains
 `10000`, not `10.000 ₫`.
+
+Automated parser tests use the same payloads. Update both when changing a
+fixture.

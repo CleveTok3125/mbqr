@@ -24,6 +24,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -89,10 +90,14 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -126,6 +131,8 @@ import java.util.Locale
 import java.util.concurrent.Executors
 
 private const val MB_REDIRECT_TIMEOUT_MS = 5_000L
+private const val TRANSFER_CONTENT_TITLE = "Lệnh chuyển khoản"
+private const val RAW_CONTENT_TITLE = "Nội dung gốc"
 
 private enum class HandoffPhase { Idle, Awaiting, Retry, Final }
 
@@ -348,6 +355,37 @@ fun ScannerScreen(
         handoffAttempt = 0
         pendingHandoffRaw = null
         pendingHandoffText = null
+    }
+
+    fun closeSheet() {
+        resetHandoff()
+        sheetRaw = null
+        scanningEnabled = true
+    }
+
+    fun closeSheetAndCopy(text: String) {
+        copyToClipboard(text)
+        closeSheet()
+    }
+
+    fun shareOrToast(text: String) {
+        if (!QrActions.shareText(context, text)) {
+            Toast.makeText(
+                context,
+                "Không có ứng dụng để chia sẻ",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
+    fun openLinkOrToast(url: String) {
+        if (!QrActions.openHttpUrl(context, url)) {
+            Toast.makeText(
+                context,
+                "Không có ứng dụng để mở liên kết",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
     }
 
     fun beginHandoff(raw: String, transferText: String) {
@@ -783,44 +821,14 @@ fun ScannerScreen(
                             onCopy = if (demoMode) {
                                 ({})
                             } else {
-                                {
-                                    resetHandoff()
-                                    copyToClipboard(raw)
-                                    sheetRaw = null
-                                    scanningEnabled = true
-                                }
+                                ({ closeSheetAndCopy(raw) })
                             },
                             onShare = if (demoMode) {
                                 ({})
                             } else {
-                                {
-                                    if (!QrActions.shareText(context, raw)) {
-                                        Toast.makeText(
-                                            context,
-                                            "Không có ứng dụng để chia sẻ",
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
-                                    }
-                                }
+                                ({ shareOrToast(raw) })
                             },
-                            onOpenLink = if (demoMode) {
-                                ({})
-                            } else {
-                                {
-                                    if (!QrActions.openHttpUrl(context, raw)) {
-                                        Toast.makeText(
-                                            context,
-                                            "Không có ứng dụng để mở liên kết",
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
-                                    }
-                                }
-                            },
-                            onScanAgain = {
-                                resetHandoff()
-                                sheetRaw = null
-                                scanningEnabled = true
-                            },
+                            onScanAgain = { closeSheet() },
                         )
                     } else {
                         val data = content.data
@@ -835,6 +843,11 @@ fun ScannerScreen(
                             data = data,
                             bankName = BankDirectory.find(data.bankBin)?.shortName,
                             copyText = transferText ?: raw,
+                            copyTitle = if (transferText != null) {
+                                TRANSFER_CONTENT_TITLE
+                            } else {
+                                RAW_CONTENT_TITLE
+                            },
                             onOpenMb = if (transferText == null || !mbInstalled) {
                                 null
                             } else if (demoMode) {
@@ -845,33 +858,15 @@ fun ScannerScreen(
                             onCopy = if (demoMode) {
                                 ({})
                             } else {
-                                {
-                                    resetHandoff()
-                                    copyToClipboard(transferText ?: raw)
-                                    sheetRaw = null
-                                    scanningEnabled = true
-                                }
+                                ({ closeSheetAndCopy(transferText ?: raw) })
                             },
                             onShare = if (demoMode) {
                                 ({})
                             } else {
-                                {
-                                    val text = transferText ?: raw
-                                    if (!QrActions.shareText(context, text)) {
-                                        Toast.makeText(
-                                            context,
-                                            "Không có ứng dụng để chia sẻ",
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
-                                    }
-                                }
+                                ({ shareOrToast(transferText ?: raw) })
                             },
                             onFieldLongClick = { value -> copyField(value) },
-                            onScanAgain = {
-                                resetHandoff()
-                                sheetRaw = null
-                                scanningEnabled = true
-                            },
+                            onScanAgain = { closeSheet() },
                         )
                     }
                 }
@@ -882,45 +877,20 @@ fun ScannerScreen(
                         onCopy = if (demoMode) {
                             ({})
                         } else {
-                            {
-                                resetHandoff()
-                                copyToClipboard(content.raw)
-                                sheetRaw = null
-                                scanningEnabled = true
-                            }
+                            ({ closeSheetAndCopy(content.raw) })
                         },
                         onShare = if (demoMode) {
                             ({})
                         } else {
-                            {
-                                if (!QrActions.shareText(context, content.raw)) {
-                                    Toast.makeText(
-                                        context,
-                                        "Không có ứng dụng để chia sẻ",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                            }
+                            ({ shareOrToast(content.raw) })
                         },
                         onOpenLink = if (demoMode) {
                             ({})
                         } else {
-                            {
-                                if (!QrActions.openHttpUrl(context, content.raw)) {
-                                    Toast.makeText(
-                                        context,
-                                        "Không có ứng dụng để mở liên kết",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                            }
+                            ({ openLinkOrToast(content.raw) })
                         },
-                        onFieldLongClick = { field -> copyField(field.copyValue) },
-                        onScanAgain = {
-                            resetHandoff()
-                            sheetRaw = null
-                            scanningEnabled = true
-                        },
+                        onFieldLongClick = { field -> copyField(field.value) },
+                        onScanAgain = { closeSheet() },
                     )
                 }
 
@@ -931,44 +901,14 @@ fun ScannerScreen(
                         onCopy = if (demoMode) {
                             ({})
                         } else {
-                            {
-                                resetHandoff()
-                                copyToClipboard(raw)
-                                sheetRaw = null
-                                scanningEnabled = true
-                            }
+                            ({ closeSheetAndCopy(raw) })
                         },
                         onShare = if (demoMode) {
                             ({})
                         } else {
-                            {
-                                if (!QrActions.shareText(context, raw)) {
-                                    Toast.makeText(
-                                        context,
-                                        "Không có ứng dụng để chia sẻ",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                            }
+                            ({ shareOrToast(raw) })
                         },
-                        onOpenLink = if (demoMode) {
-                            ({})
-                        } else {
-                            {
-                                if (!QrActions.openHttpUrl(context, raw)) {
-                                    Toast.makeText(
-                                        context,
-                                        "Không có ứng dụng để mở liên kết",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                            }
-                        },
-                        onScanAgain = {
-                            resetHandoff()
-                            sheetRaw = null
-                            scanningEnabled = true
-                        },
+                        onScanAgain = { closeSheet() },
                     )
                 }
             }
@@ -1088,6 +1028,7 @@ private fun ParsedQrSheetContent(
     data: VietQrData,
     bankName: String?,
     copyText: String,
+    copyTitle: String,
     onOpenMb: (() -> Unit)?,
     onCopy: () -> Unit,
     onShare: () -> Unit,
@@ -1139,10 +1080,17 @@ private fun ParsedQrSheetContent(
             }
         }
 
+        Text(
+            text = copyTitle,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+        )
+
         SelectionContainer {
             Text(
                 text = copyText,
                 fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier
                     .heightIn(max = 120.dp)
@@ -1198,13 +1146,19 @@ private fun ParsedField(
     value: String,
     onLongClick: () -> Unit,
 ) {
+    val copyAction = onLongClick
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(
-                onClick = {},
-                onLongClick = onLongClick,
-            )
+            .pointerInput(copyAction) {
+                detectTapGestures(onLongPress = { copyAction() })
+            }
+            .semantics {
+                this.onLongClick(label = "Sao chép") {
+                    copyAction()
+                    true
+                }
+            }
             .padding(vertical = 2.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -1246,10 +1200,16 @@ private fun DetailsQrSheetContent(
         }
 
         if (!UrlDetector.isHttpUrl(details.raw)) {
+            Text(
+                text = RAW_CONTENT_TITLE,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+            )
             SelectionContainer {
                 Text(
                     text = details.raw,
                     fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier
                         .heightIn(max = 120.dp)
@@ -1333,7 +1293,6 @@ private fun RawQrSheetContent(
     raw: String,
     onCopy: () -> Unit,
     onShare: () -> Unit,
-    onOpenLink: () -> Unit,
     onScanAgain: () -> Unit,
 ) {
     Column(
@@ -1344,10 +1303,16 @@ private fun RawQrSheetContent(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(text = reason, style = MaterialTheme.typography.titleLarge)
+        Text(
+            text = RAW_CONTENT_TITLE,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+        )
         SelectionContainer {
             Text(
                 text = raw,
                 fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier
                     .heightIn(max = 220.dp)
@@ -1378,47 +1343,14 @@ private fun RawQrSheetContent(
             }
         }
 
-        if (UrlDetector.isHttpUrl(raw)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                FilledTonalButton(
-                    onClick = onOpenLink,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    ),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_open_in_new),
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Mở liên kết")
-                }
-                OutlinedButton(onClick = onScanAgain, modifier = Modifier.weight(1f)) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_arrow_forward),
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Quét tiếp")
-                }
-            }
-        } else {
-            OutlinedButton(onClick = onScanAgain, modifier = Modifier.fillMaxWidth()) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_arrow_forward),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Quét tiếp")
-            }
+        OutlinedButton(onClick = onScanAgain, modifier = Modifier.fillMaxWidth()) {
+            Icon(
+                painter = painterResource(R.drawable.ic_arrow_forward),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Quét tiếp")
         }
     }
 }

@@ -38,9 +38,9 @@ common QR formats.
   `https://api.vietqr.io/v2/banks`; the app never requests it at runtime.
 - Formats are detected from specific to generic, so `mailto:` and `sms:` are not
   treated as links and `WIFI:` is not treated as text.
-- Invalid-CRC VietQR and plain text open a raw sheet. Raw sheets can copy/share,
-  and open plain HTTP(S) payloads in a browser. An unsupported bank keeps the
-  parsed sheet and previews the raw payload for copy.
+- Invalid-CRC VietQR and plain text open a raw sheet that can copy/share.
+  HTTP(S) payloads open a link sheet with a browser action. An unsupported bank
+  keeps the parsed sheet and previews the raw payload for copy.
 
 ## Bank directory
 
