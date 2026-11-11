@@ -117,13 +117,36 @@ class QrContentParserTest {
     }
 
     @Test
-    fun `urlto link is normalized before it is displayed`() {
+    fun `urlto bookmark uses title and embedded url`() {
+        val url = QrContentParser.parse(
+            "URLTO:Example:https://example.com/path",
+        ) as QrContent.Details
+
+        assertEquals("https://example.com/path", url.raw)
+        assertEquals("Example", url.field("Tiêu đề"))
+        assertEquals("https://example.com/path", url.field("Liên kết"))
+    }
+
+    @Test
+    fun `urlto direct url remains supported`() {
         val url = QrContentParser.parse(
             "URLTO:https://example.com/path",
         ) as QrContent.Details
 
         assertEquals("https://example.com/path", url.raw)
-        assertEquals("https://example.com/path", url.field("Liên kết"))
+    }
+
+    @Test
+    fun `normalization removes markers and preserves line breaks`() {
+        assertEquals(
+            "hello\nworld",
+            QrContentParser.normalized("\uFEFF  hello\nworld  \u200B"),
+        )
+    }
+
+    @Test
+    fun `invalid isbn falls back to text`() {
+        assertTrue(QrContentParser.parse("ISBN:hello") is QrContent.Text)
     }
 
     @Test
@@ -153,7 +176,11 @@ class QrContentParserTest {
                     val content = QrContentParser.parse(case.raw) as? QrContent.Details
                         ?: throw AssertionError("${case.name}: expected details")
                     assertEquals("${case.name}: title", expected.title, content.title)
-                    assertEquals("${case.name}: field", expected.value, content.field(expected.field))
+                    assertEquals(
+                        "${case.name}: field",
+                        expected.value,
+                        content.field(expected.field),
+                    )
                     expected.absentField?.let { absent ->
                         assertEquals(
                             "${case.name}: absent $absent",

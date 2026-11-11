@@ -81,12 +81,6 @@ object VietQrParser {
         return VietQrParseResult.VietQr(data = data, crcValid = crcValid)
     }
 
-    /**
-     * Returns the payload with surrounding whitespace and invisible characters
-     * removed. Used when the raw value has to be shown or copied.
-     */
-    fun normalized(raw: String): String = normalize(raw)
-
     private fun normalize(raw: String): String =
         raw.trim().filter { !it.isISOControl() && it != '\uFEFF' && it != '\u200B' }
 

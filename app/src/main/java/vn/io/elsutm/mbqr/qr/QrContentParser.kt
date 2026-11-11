@@ -9,6 +9,7 @@ import com.google.zxing.client.result.ParsedResult
 import com.google.zxing.client.result.ResultParser
 import com.google.zxing.client.result.SMSParsedResult
 import com.google.zxing.client.result.TelParsedResult
+import com.google.zxing.client.result.URIParsedResult
 import com.google.zxing.client.result.WifiParsedResult
 import vn.io.elsutm.mbqr.handoff.UrlDetector
 import vn.io.elsutm.mbqr.vietqr.VietQrParseResult
@@ -80,7 +81,7 @@ object QrContentParser {
 
     /** Returns the payload with surrounding whitespace and invisible markers removed. */
     fun normalized(raw: String): String =
-        raw.trim().filter { it != '\uFEFF' && it != '\u200B' }
+        raw.filter { it != '\uFEFF' && it != '\u200B' }.trim()
 
     private fun detectRule(raw: String): PrefixRule? =
         RULES.firstOrNull { rule ->
@@ -204,8 +205,11 @@ object QrContentParser {
     }
 
     private fun parseIsbn(raw: String): QrContent {
-        val value = raw.substringAfter(':', missingDelimiterValue = "").trim()
-        if (value.isEmpty()) return QrContent.Text(raw)
+        val value = raw.substringAfter(':', missingDelimiterValue = "")
+            .trim()
+            .replace("-", "")
+            .replace(" ", "")
+        if (!value.matches(ISBN_PATTERN)) return QrContent.Text(raw)
         return QrContent.Details(
             raw = raw,
             title = "ISBN",
@@ -214,17 +218,27 @@ object QrContentParser {
     }
 
     private fun parseUrl(displayRaw: String, canonical: String): QrContent {
-        val candidate = if (canonical.startsWith("URLTO:", ignoreCase = true)) {
+        // URLTO bookmarks are `URLTO:[title]:[url]`; ZXing handles that form.
+        val zxing = parseWithZxing(canonical) as? URIParsedResult
+        val zxingUrl = zxing?.getURI()?.takeIf { UrlDetector.isHttpUrl(it) }
+        val title = zxing?.getTitle()
+            ?.takeIf { zxingUrl != null && it.isNotBlank() }
+        val stripped = if (canonical.startsWith("URLTO:", ignoreCase = true)) {
             canonical.substring("URLTO:".length).trim()
         } else {
             canonical.trim()
         }
-        if (!UrlDetector.isHttpUrl(candidate)) return QrContent.Text(displayRaw)
+        val candidate = zxingUrl
+            ?: stripped.takeIf { UrlDetector.isHttpUrl(it) }
+            ?: return QrContent.Text(displayRaw)
 
         return QrContent.Details(
             raw = candidate,
             title = "Liên kết",
-            fields = listOf(QrField("Liên kết", candidate)),
+            fields = buildList {
+                title?.let { add(QrField("Tiêu đề", it)) }
+                add(QrField("Liên kết", candidate))
+            },
         )
     }
 
@@ -234,6 +248,8 @@ object QrContentParser {
 
     private fun detailsOrText(raw: String, title: String, fields: List<QrField>): QrContent =
         if (fields.isEmpty()) QrContent.Text(raw) else QrContent.Details(raw, title, fields)
+
+    private val ISBN_PATTERN = Regex("""(?:\d{9}[\dXx]|\d{13})""")
 
     private fun wifiSecurityLabel(value: String): String = when {
         value.equals("nopass", ignoreCase = true) -> "Không mật khẩu"
