@@ -116,18 +116,20 @@ object QrContentParser {
         val ssid = parsed.ssid?.takeIf { it.isNotBlank() } ?: return QrContent.Text(raw)
 
         val fields = buildList {
-            add(QrField("Tên mạng", ssid))
+            add(QrField("Tên mạng", ssid, QrFieldSensitivity.Personal))
             parsed.networkEncryption
                 ?.takeIf { it.isNotBlank() }
                 ?.let { add(QrField("Bảo mật", wifiSecurityLabel(it))) }
             parsed.password
                 ?.takeIf { it.isNotBlank() }
-                ?.let { add(QrField("Mật khẩu", it)) }
+                ?.let { add(QrField("Mật khẩu", it, QrFieldSensitivity.Direct)) }
             if (parsed.isHidden) add(QrField("Mạng ẩn", "Có"))
-            parsed.identity?.takeIf { it.isNotBlank() }?.let { add(QrField("Danh tính", it)) }
+            parsed.identity
+                ?.takeIf { it.isNotBlank() }
+                ?.let { add(QrField("Danh tính", it, QrFieldSensitivity.Direct)) }
             parsed.anonymousIdentity
                 ?.takeIf { it.isNotBlank() }
-                ?.let { add(QrField("Danh tính ẩn", it)) }
+                ?.let { add(QrField("Danh tính ẩn", it, QrFieldSensitivity.Direct)) }
             parsed.eapMethod?.takeIf { it.isNotBlank() }?.let { add(QrField("EAP", it)) }
             parsed.phase2Method?.takeIf { it.isNotBlank() }?.let { add(QrField("Phase 2", it)) }
         }
@@ -138,18 +140,18 @@ object QrContentParser {
     private fun parseContact(raw: String): QrContent {
         val parsed = parseWithZxing(raw) as? AddressBookParsedResult ?: return QrContent.Text(raw)
         val fields = buildList {
-            addAll(parsed.names, "Tên")
-            addAll(parsed.nicknames, "Biệt danh")
-            addAll(parsed.phoneNumbers, "Điện thoại")
-            addAll(parsed.emails, "Email")
-            addAll(parsed.addresses, "Địa chỉ")
-            add("Tổ chức", parsed.org)
-            add("Chức danh", parsed.title)
-            addAll(parsed.getURLs(), "URL")
-            add("Ghi chú", parsed.note)
-            add("Sinh nhật", parsed.birthday)
-            add("Nhắn tin", parsed.instantMessenger)
-            addAll(parsed.geo, "Vị trí")
+            addAll(parsed.names, "Tên", QrFieldSensitivity.Personal)
+            addAll(parsed.nicknames, "Biệt danh", QrFieldSensitivity.Personal)
+            addAll(parsed.phoneNumbers, "Điện thoại", QrFieldSensitivity.Direct)
+            addAll(parsed.emails, "Email", QrFieldSensitivity.Direct)
+            addAll(parsed.addresses, "Địa chỉ", QrFieldSensitivity.Direct)
+            add("Tổ chức", parsed.org, QrFieldSensitivity.Personal)
+            add("Chức danh", parsed.title, QrFieldSensitivity.Personal)
+            addAll(parsed.getURLs(), "URL", QrFieldSensitivity.Personal)
+            add("Ghi chú", parsed.note, QrFieldSensitivity.Direct)
+            add("Sinh nhật", parsed.birthday, QrFieldSensitivity.Direct)
+            add("Nhắn tin", parsed.instantMessenger, QrFieldSensitivity.Direct)
+            addAll(parsed.geo, "Vị trí", QrFieldSensitivity.Direct)
         }
 
         return detailsOrText(raw, "Danh bạ", fields)
@@ -158,11 +160,11 @@ object QrContentParser {
     private fun parseEmail(raw: String): QrContent {
         val parsed = parseWithZxing(raw) as? EmailAddressParsedResult ?: return QrContent.Text(raw)
         val fields = buildList {
-            addAll(parsed.tos, "Đến")
-            addAll(parsed.getCCs(), "CC")
-            addAll(parsed.getBCCs(), "BCC")
-            add("Tiêu đề", parsed.subject)
-            add("Nội dung", parsed.body)
+            addAll(parsed.tos, "Đến", QrFieldSensitivity.Direct)
+            addAll(parsed.getCCs(), "CC", QrFieldSensitivity.Direct)
+            addAll(parsed.getBCCs(), "BCC", QrFieldSensitivity.Direct)
+            add("Tiêu đề", parsed.subject, QrFieldSensitivity.Personal)
+            add("Nội dung", parsed.body, QrFieldSensitivity.Direct)
         }
 
         return detailsOrText(raw, "Email", fields)
@@ -175,8 +177,8 @@ object QrContentParser {
             raw = raw,
             title = "Điện thoại",
             fields = buildList {
-                add(QrField("Số điện thoại", number))
-                add("Tên", parsed.title)
+                add(QrField("Số điện thoại", number, QrFieldSensitivity.Direct))
+                add("Tên", parsed.title, QrFieldSensitivity.Personal)
             },
         )
     }
@@ -184,9 +186,9 @@ object QrContentParser {
     private fun parseSms(raw: String): QrContent {
         val parsed = parseWithZxing(raw) as? SMSParsedResult ?: return QrContent.Text(raw)
         val fields = buildList {
-            addAll(parsed.numbers, "Đến")
-            add("Tiêu đề", parsed.subject)
-            add("Nội dung", parsed.body)
+            addAll(parsed.numbers, "Đến", QrFieldSensitivity.Direct)
+            add("Tiêu đề", parsed.subject, QrFieldSensitivity.Personal)
+            add("Nội dung", parsed.body, QrFieldSensitivity.Direct)
         }
 
         return detailsOrText(raw, "Tin nhắn", fields)
@@ -195,10 +197,12 @@ object QrContentParser {
     private fun parseGeo(raw: String): QrContent {
         val parsed = parseWithZxing(raw) as? GeoParsedResult ?: return QrContent.Text(raw)
         val fields = buildList {
-            add(QrField("Vĩ độ", parsed.latitude.toString()))
-            add(QrField("Kinh độ", parsed.longitude.toString()))
-            if (parsed.altitude > 0.0) add(QrField("Độ cao", "${parsed.altitude} m"))
-            add("Truy vấn", parsed.query)
+            add(QrField("Vĩ độ", parsed.latitude.toString(), QrFieldSensitivity.Direct))
+            add(QrField("Kinh độ", parsed.longitude.toString(), QrFieldSensitivity.Direct))
+            if (parsed.altitude > 0.0) {
+                add(QrField("Độ cao", "${parsed.altitude} m", QrFieldSensitivity.Personal))
+            }
+            add("Truy vấn", parsed.query, QrFieldSensitivity.Personal)
         }
 
         return QrContent.Details(raw = raw, title = "Vị trí", fields = fields)
@@ -236,8 +240,8 @@ object QrContentParser {
             raw = candidate,
             title = "Liên kết",
             fields = buildList {
-                title?.let { add(QrField("Tiêu đề", it)) }
-                add(QrField("Liên kết", candidate))
+                title?.let { add(QrField("Tiêu đề", it, QrFieldSensitivity.Personal)) }
+                add(QrField("Liên kết", candidate, QrFieldSensitivity.Personal))
             },
         )
     }
@@ -260,11 +264,19 @@ object QrContentParser {
         else -> value
     }
 
-    private fun MutableList<QrField>.add(label: String, value: String?) {
-        value?.takeIf { it.isNotBlank() }?.let { add(QrField(label, it)) }
+    private fun MutableList<QrField>.add(
+        label: String,
+        value: String?,
+        sensitivity: QrFieldSensitivity = QrFieldSensitivity.None,
+    ) {
+        value?.takeIf { it.isNotBlank() }?.let { add(QrField(label, it, sensitivity)) }
     }
 
-    private fun MutableList<QrField>.addAll(values: Array<String>?, label: String) {
-        values?.forEach { value -> add(label, value) }
+    private fun MutableList<QrField>.addAll(
+        values: Array<String>?,
+        label: String,
+        sensitivity: QrFieldSensitivity = QrFieldSensitivity.None,
+    ) {
+        values?.forEach { value -> add(label, value, sensitivity) }
     }
 }

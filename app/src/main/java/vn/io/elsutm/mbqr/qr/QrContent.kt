@@ -2,10 +2,18 @@ package vn.io.elsutm.mbqr.qr
 
 import vn.io.elsutm.mbqr.vietqr.VietQrData
 
+/** Visibility policy for a value parsed from a QR payload. */
+enum class QrFieldSensitivity {
+    None,
+    Personal,
+    Direct,
+}
+
 /** One displayable value from a parsed QR payload. */
 data class QrField(
     val label: String,
     val value: String,
+    val sensitivity: QrFieldSensitivity = QrFieldSensitivity.None,
 )
 
 /** Parsed QR content before it is mapped to a result sheet. */

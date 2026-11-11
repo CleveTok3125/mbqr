@@ -105,17 +105,19 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 
 ## Controls
 
-- **Cài đặt**: confirmation; scan-inside-frame with margin `0–100%` (default
-  `50`); clipboard expiry `0` = off, otherwise `15–300s` in 15s steps
-  (default `60`). **Thông tin** opens credits, version, source, and license.
+- **Cài đặt**: sensitive-data masking level `0` off, `1` light, `2` full
+  (default `0`); confirmation; scan-inside-frame with margin `0–100%` (default
+  `50`); clipboard expiry `0` = off, otherwise `15–300s` in 15s steps (default
+  `60`). **Thông tin** opens credits, version, source, and license.
 - **Đèn / Ảnh**: torch; scan a gallery image or one image shared from another app.
 - **Arc dial**: zoom `1x` to camera max; ticks at powers of two, minor ticks per
   interval, final tail clipped at max; haptics at ticks and endpoints.
 - **Shutter**: full-resolution capture.
 - **Clipboard pill**: tap to copy again and restart the timer when enabled;
   long-press to clear.
-- **Parsed fields**: long-press any field to copy its value. Amounts copy as raw
-  digits, such as `10000`.
+- **Parsed fields**: tap a masked value or its eye icon to toggle visibility.
+  Long-press copies the real value without changing visibility. Amounts copy as
+  raw digits, such as `10000`.
 
 ## Behavior
 
@@ -138,6 +140,21 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 - HTTP(S) links appear as a link sheet with **Mở liên kết**.
 - Every parsed field supports long-press copy. Field copies use the clipboard
   timer.
+
+### Sensitive fields
+
+- **Mức ẩn dữ liệu nhạy cảm** has three levels: `0` off, `1` light, `2` full.
+  The default is off.
+- Level `1` hides direct secrets and identifiers. Level `2` also hides personal
+  context such as names, subjects, and links.
+- At level `0`, raw payloads stay visible. At level `2`, the app masks all raw
+  payloads. At level `1`, the app masks a raw payload only when it also masks a
+  parsed field.
+- Tap a masked value or its eye icon to show it. Tap again to hide it.
+- Long-press a field to copy the real value without changing the display. When
+  you open a sheet again, masked values start hidden.
+- See [Sensitive data masking](docs/sensitive-data-masking.md) for the field
+  matrix and limits.
 
 ### MB handoff
 

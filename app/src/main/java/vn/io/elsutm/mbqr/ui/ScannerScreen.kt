@@ -24,7 +24,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -57,6 +56,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -90,12 +90,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.onLongClick
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -121,6 +118,7 @@ import vn.io.elsutm.mbqr.handoff.UrlDetector
 import vn.io.elsutm.mbqr.qr.QrContent
 import vn.io.elsutm.mbqr.qr.QrContentParser
 import vn.io.elsutm.mbqr.qr.QrField
+import vn.io.elsutm.mbqr.qr.QrFieldSensitivity
 import vn.io.elsutm.mbqr.service.ClipboardExpiryService
 import vn.io.elsutm.mbqr.settings.AppSettings
 import vn.io.elsutm.mbqr.vietqr.BankDirectory
@@ -133,6 +131,7 @@ import java.util.concurrent.Executors
 private const val MB_REDIRECT_TIMEOUT_MS = 5_000L
 private const val TRANSFER_CONTENT_TITLE = "Lệnh chuyển khoản"
 private const val RAW_CONTENT_TITLE = "Nội dung gốc"
+private const val MASKED_SENSITIVE_VALUE = "••••••••"
 
 private enum class HandoffPhase { Idle, Awaiting, Retry, Final }
 
@@ -174,6 +173,9 @@ fun ScannerScreen(
         mutableStateOf(AppSettings.clipboardExpirySeconds(context))
     }
     var scanInsideFrame by remember { mutableStateOf(AppSettings.scanInsideFrame(context)) }
+    var sensitiveMaskingLevel by remember {
+        mutableStateOf(AppSettings.sensitiveMaskingLevel(context))
+    }
     var scanFrameMarginPercent by remember {
         mutableStateOf(AppSettings.scanFrameMarginPercent(context))
     }
@@ -818,6 +820,11 @@ fun ScannerScreen(
                         RawQrSheetContent(
                             reason = sheetReason,
                             raw = raw,
+                            maskingActive = rawMaskingActive(
+                                sensitiveMaskingLevel,
+                                hasHiddenVietQrFields(content.data, sensitiveMaskingLevel),
+                            ),
+                            sensitiveMaskingLevel = sensitiveMaskingLevel,
                             onCopy = if (demoMode) {
                                 ({})
                             } else {
@@ -848,6 +855,18 @@ fun ScannerScreen(
                             } else {
                                 RAW_CONTENT_TITLE
                             },
+                            copyMaskingActive = if (transferText != null) {
+                                isMaskingActive(
+                                    QrFieldSensitivity.Direct,
+                                    sensitiveMaskingLevel,
+                                )
+                            } else {
+                                rawMaskingActive(
+                                    sensitiveMaskingLevel,
+                                    hasHiddenVietQrFields(data, sensitiveMaskingLevel),
+                                )
+                            },
+                            sensitiveMaskingLevel = sensitiveMaskingLevel,
                             onOpenMb = if (transferText == null || !mbInstalled) {
                                 null
                             } else if (demoMode) {
@@ -874,6 +893,7 @@ fun ScannerScreen(
                 is QrContent.Details -> {
                     DetailsQrSheetContent(
                         details = content,
+                        sensitiveMaskingLevel = sensitiveMaskingLevel,
                         onCopy = if (demoMode) {
                             ({})
                         } else {
@@ -898,6 +918,11 @@ fun ScannerScreen(
                     RawQrSheetContent(
                         reason = sheetReason.ifBlank { "Nội dung QR" },
                         raw = raw,
+                        maskingActive = rawMaskingActive(
+                            sensitiveMaskingLevel,
+                            hasHiddenParsedFields = false,
+                        ),
+                        sensitiveMaskingLevel = sensitiveMaskingLevel,
                         onCopy = if (demoMode) {
                             ({})
                         } else {
@@ -925,6 +950,13 @@ fun ScannerScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     HideDialogStatusBar(demoMode)
+                    SensitiveMaskingLevelSetting(
+                        level = sensitiveMaskingLevel,
+                        onLevelChange = { level ->
+                            sensitiveMaskingLevel = level
+                            AppSettings.setSensitiveMaskingLevel(context, level)
+                        },
+                    )
                     SettingsToggle(
                         label = "Hiện bảng xác nhận trước khi mở MB Bank",
                         checked = confirmBeforeOpeningMb,
@@ -1029,6 +1061,8 @@ private fun ParsedQrSheetContent(
     bankName: String?,
     copyText: String,
     copyTitle: String,
+    copyMaskingActive: Boolean,
+    sensitiveMaskingLevel: Int,
     onOpenMb: (() -> Unit)?,
     onCopy: () -> Unit,
     onShare: () -> Unit,
@@ -1050,17 +1084,23 @@ private fun ParsedQrSheetContent(
             ParsedField(
                 label = "Ngân hàng",
                 value = bankLabel,
+                sensitivity = QrFieldSensitivity.None,
+                sensitiveMaskingLevel = sensitiveMaskingLevel,
                 onLongClick = { onFieldLongClick(bankCopy) },
             )
             ParsedField(
                 label = "Tài khoản",
                 value = data.account,
+                sensitivity = QrFieldSensitivity.Direct,
+                sensitiveMaskingLevel = sensitiveMaskingLevel,
                 onLongClick = { onFieldLongClick(data.account) },
             )
             data.amountVnd?.let { amount ->
                 ParsedField(
                     label = "Số tiền",
                     value = formatVnd(amount),
+                    sensitivity = QrFieldSensitivity.Direct,
+                    sensitiveMaskingLevel = sensitiveMaskingLevel,
                     onLongClick = { onFieldLongClick(amount.toString()) },
                 )
             }
@@ -1068,6 +1108,8 @@ private fun ParsedQrSheetContent(
                 ParsedField(
                     label = "Tên đơn vị",
                     value = name,
+                    sensitivity = QrFieldSensitivity.Personal,
+                    sensitiveMaskingLevel = sensitiveMaskingLevel,
                     onLongClick = { onFieldLongClick(name) },
                 )
             }
@@ -1075,28 +1117,20 @@ private fun ParsedQrSheetContent(
                 ParsedField(
                     label = "Nội dung",
                     value = content,
+                    sensitivity = QrFieldSensitivity.Direct,
+                    sensitiveMaskingLevel = sensitiveMaskingLevel,
                     onLongClick = { onFieldLongClick(content) },
                 )
             }
         }
 
-        Text(
-            text = copyTitle,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
+        SensitiveCopyableBlock(
+            title = copyTitle,
+            value = copyText,
+            maskingActive = copyMaskingActive,
+            sensitiveMaskingLevel = sensitiveMaskingLevel,
+            maxHeight = 120.dp,
         )
-
-        SelectionContainer {
-            Text(
-                text = copyText,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier
-                    .heightIn(max = 120.dp)
-                    .verticalScroll(rememberScrollState()),
-            )
-        }
 
         onOpenMb?.let { open ->
             Button(onClick = open, modifier = Modifier.fillMaxWidth()) {
@@ -1140,40 +1174,178 @@ private fun ParsedQrSheetContent(
     }
 }
 
+private fun isMaskingActive(
+    sensitivity: QrFieldSensitivity,
+    maskingLevel: Int,
+): Boolean = when (sensitivity) {
+    QrFieldSensitivity.None -> false
+    QrFieldSensitivity.Personal -> maskingLevel >= AppSettings.MASKING_FULL
+    QrFieldSensitivity.Direct -> maskingLevel >= AppSettings.MASKING_LIGHT
+}
+
+private fun hasHiddenFields(
+    fields: List<QrField>,
+    maskingLevel: Int,
+): Boolean = fields.any { isMaskingActive(it.sensitivity, maskingLevel) }
+
+// Account is present in every parsed VietQR and is Direct.
+private fun hasHiddenVietQrFields(
+    data: VietQrData,
+    maskingLevel: Int,
+): Boolean = data.account.isNotBlank() &&
+    isMaskingActive(QrFieldSensitivity.Direct, maskingLevel)
+
+private fun rawMaskingActive(
+    maskingLevel: Int,
+    hasHiddenParsedFields: Boolean,
+): Boolean = when (maskingLevel) {
+    AppSettings.MASKING_OFF -> false
+    AppSettings.MASKING_FULL -> true
+    AppSettings.MASKING_LIGHT -> hasHiddenParsedFields
+    else -> false
+}
+
 @Composable
 private fun ParsedField(
     label: String,
     value: String,
+    sensitivity: QrFieldSensitivity,
+    sensitiveMaskingLevel: Int,
     onLongClick: () -> Unit,
 ) {
+    var revealed by remember(label, value, sensitivity, sensitiveMaskingLevel) {
+        mutableStateOf(false)
+    }
+    val maskingActive = isMaskingActive(sensitivity, sensitiveMaskingLevel)
+    val hideValue = maskingActive && !revealed
     val copyAction = onLongClick
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .pointerInput(copyAction) {
-                detectTapGestures(onLongPress = { copyAction() })
-            }
-            .semantics {
-                this.onLongClick(label = "Sao chép") {
-                    copyAction()
-                    true
-                }
-            }
             .padding(vertical = 2.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (maskingActive) {
+                VisibilityToggleIcon(
+                    hidden = hideValue,
+                    onToggle = { revealed = !revealed },
+                )
+            }
+        }
         Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = if (hideValue) MASKED_SENSITIVE_VALUE else value,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClickLabel = if (maskingActive) {
+                        if (hideValue) "Hiện dữ liệu" else "Ẩn dữ liệu"
+                    } else {
+                        null
+                    },
+                    onLongClickLabel = "Sao chép",
+                    onClick = {
+                        if (maskingActive) {
+                            revealed = !revealed
+                        }
+                    },
+                    onLongClick = { copyAction() },
+                ),
         )
-        Text(text = value, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun VisibilityToggleIcon(
+    hidden: Boolean,
+    onToggle: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .clickable(role = Role.Button, onClick = onToggle),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(
+                if (hidden) R.drawable.ic_visibility_off else R.drawable.ic_visibility,
+            ),
+            contentDescription = if (hidden) "Hiện dữ liệu" else "Ẩn dữ liệu",
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun SensitiveCopyableBlock(
+    title: String,
+    value: String,
+    maskingActive: Boolean,
+    sensitiveMaskingLevel: Int,
+    maxHeight: Dp,
+) {
+    var revealed by remember(title, value, maskingActive, sensitiveMaskingLevel) {
+        mutableStateOf(false)
+    }
+    val hideValue = maskingActive && !revealed
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+        )
+        if (maskingActive) {
+            VisibilityToggleIcon(
+                hidden = hideValue,
+                onToggle = { revealed = !revealed },
+            )
+        }
+    }
+
+    if (maskingActive) {
+        Text(
+            text = if (hideValue) MASKED_SENSITIVE_VALUE else value,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier
+                .heightIn(max = maxHeight)
+                .verticalScroll(rememberScrollState())
+                .clickable { revealed = !revealed },
+        )
+    } else {
+        SelectionContainer {
+            Text(
+                text = value,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .heightIn(max = maxHeight)
+                    .verticalScroll(rememberScrollState()),
+            )
+        }
     }
 }
 
 @Composable
 private fun DetailsQrSheetContent(
     details: QrContent.Details,
+    sensitiveMaskingLevel: Int,
     onCopy: () -> Unit,
     onShare: () -> Unit,
     onOpenLink: () -> Unit,
@@ -1194,28 +1366,24 @@ private fun DetailsQrSheetContent(
                 ParsedField(
                     label = field.label,
                     value = field.value,
+                    sensitivity = field.sensitivity,
+                    sensitiveMaskingLevel = sensitiveMaskingLevel,
                     onLongClick = { onFieldLongClick(field) },
                 )
             }
         }
 
         if (!UrlDetector.isHttpUrl(details.raw)) {
-            Text(
-                text = RAW_CONTENT_TITLE,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
+            SensitiveCopyableBlock(
+                title = RAW_CONTENT_TITLE,
+                value = details.raw,
+                maskingActive = rawMaskingActive(
+                    sensitiveMaskingLevel,
+                    hasHiddenFields(details.fields, sensitiveMaskingLevel),
+                ),
+                sensitiveMaskingLevel = sensitiveMaskingLevel,
+                maxHeight = 120.dp,
             )
-            SelectionContainer {
-                Text(
-                    text = details.raw,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .heightIn(max = 120.dp)
-                        .verticalScroll(rememberScrollState()),
-                )
-            }
         }
 
         Row(
@@ -1291,6 +1459,8 @@ private fun DetailsQrSheetContent(
 private fun RawQrSheetContent(
     reason: String,
     raw: String,
+    maskingActive: Boolean,
+    sensitiveMaskingLevel: Int,
     onCopy: () -> Unit,
     onShare: () -> Unit,
     onScanAgain: () -> Unit,
@@ -1303,22 +1473,13 @@ private fun RawQrSheetContent(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(text = reason, style = MaterialTheme.typography.titleLarge)
-        Text(
-            text = RAW_CONTENT_TITLE,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
+        SensitiveCopyableBlock(
+            title = RAW_CONTENT_TITLE,
+            value = raw,
+            maskingActive = maskingActive,
+            sensitiveMaskingLevel = sensitiveMaskingLevel,
+            maxHeight = 220.dp,
         )
-        SelectionContainer {
-            Text(
-                text = raw,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.SemiBold,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier
-                    .heightIn(max = 220.dp)
-                    .verticalScroll(rememberScrollState()),
-            )
-        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1357,6 +1518,37 @@ private fun RawQrSheetContent(
 
 private fun formatVnd(amount: Long): String =
     NumberFormat.getNumberInstance(Locale.forLanguageTag("vi-VN")).format(amount) + " ₫"
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SensitiveMaskingLevelSetting(
+    level: Int,
+    onLevelChange: (Int) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = "Mức ẩn dữ liệu nhạy cảm",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = level == AppSettings.MASKING_OFF,
+                onClick = { onLevelChange(AppSettings.MASKING_OFF) },
+                label = { Text("Tắt") },
+            )
+            FilterChip(
+                selected = level == AppSettings.MASKING_LIGHT,
+                onClick = { onLevelChange(AppSettings.MASKING_LIGHT) },
+                label = { Text("Nhẹ") },
+            )
+            FilterChip(
+                selected = level == AppSettings.MASKING_FULL,
+                onClick = { onLevelChange(AppSettings.MASKING_FULL) },
+                label = { Text("Toàn bộ") },
+            )
+        }
+    }
+}
 
 @Composable
 private fun SettingsToggle(

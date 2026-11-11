@@ -21,6 +21,16 @@ Synthetic QR codes for manual testing.
 | [`15-url.png`](15-url.png) | HTTPS URL | Link details with `Mở liên kết` |
 | [`16-text.png`](16-text.png) | Plain text | Raw sheet |
 
+At masking level `1`, direct identifiers and the transfer command show
+`••••••••`. Names, subjects, and links stay visible. The app masks a raw payload
+at level `1` only when it also masks a parsed field. At level `2`, the app also
+masks personal context and all raw payloads.
+
+Tap a value or its eye icon to toggle visibility. Long-press a field to copy its
+real value without revealing the value. At level `0`, all fields stay visible.
+See [`../docs/sensitive-data-masking.md`](../docs/sensitive-data-masking.md) for
+the full field matrix.
+
 Check that long-press on each parsed field copies its value. On
 `01-vietqr-valid.png`, long-press `Số tiền` and confirm the clipboard contains
 `10000`, not `10.000 ₫`.

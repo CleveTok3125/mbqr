@@ -32,6 +32,42 @@ class QrContentParserTest {
     }
 
     @Test
+    fun `classifies fields for both masking levels`() {
+        val wifi = QrContentParser.parse(
+            "WIFI:T:WPA;S:Home;P:secret;H:true;;",
+        ) as QrContent.Details
+        assertEquals(QrFieldSensitivity.Personal, wifi.fieldSensitivity("Tên mạng"))
+        assertEquals(QrFieldSensitivity.Direct, wifi.fieldSensitivity("Mật khẩu"))
+        assertEquals(QrFieldSensitivity.None, wifi.fieldSensitivity("Bảo mật"))
+        assertEquals(QrFieldSensitivity.None, wifi.fieldSensitivity("Mạng ẩn"))
+
+        val contact = QrContentParser.parse(
+            "BEGIN:VCARD\nVERSION:3.0\nFN:Nguyen Van A\n" +
+                "TEL:0901234567\nEMAIL:a@example.com\nORG:Example\nEND:VCARD",
+        ) as QrContent.Details
+        assertEquals(QrFieldSensitivity.Personal, contact.fieldSensitivity("Tên"))
+        assertEquals(QrFieldSensitivity.Direct, contact.fieldSensitivity("Điện thoại"))
+        assertEquals(QrFieldSensitivity.Direct, contact.fieldSensitivity("Email"))
+        assertEquals(QrFieldSensitivity.Personal, contact.fieldSensitivity("Tổ chức"))
+
+        val email = QrContentParser.parse(
+            "mailto:a@example.com?subject=Hello&body=World",
+        ) as QrContent.Details
+        assertEquals(QrFieldSensitivity.Direct, email.fieldSensitivity("Đến"))
+        assertEquals(QrFieldSensitivity.Personal, email.fieldSensitivity("Tiêu đề"))
+        assertEquals(QrFieldSensitivity.Direct, email.fieldSensitivity("Nội dung"))
+
+        val url = QrContentParser.parse(
+            "URLTO:Example:https://example.com/path",
+        ) as QrContent.Details
+        assertEquals(QrFieldSensitivity.Personal, url.fieldSensitivity("Tiêu đề"))
+        assertEquals(QrFieldSensitivity.Personal, url.fieldSensitivity("Liên kết"))
+
+        val isbn = QrContentParser.parse("ISBN:9780306406157") as QrContent.Details
+        assertEquals(QrFieldSensitivity.None, isbn.fieldSensitivity("ISBN"))
+    }
+
+    @Test
     fun `wifi prefix is case insensitive and open networks omit password`() {
         val content = QrContentParser.parse(
             "wifi:T:nopass;S:Open;P:;H:false;;",
@@ -198,6 +234,10 @@ class QrContentParserTest {
 
     private fun QrContent.Details.fieldOrNull(label: String): String? =
         fields.firstOrNull { it.label == label }?.value
+
+    private fun QrContent.Details.fieldSensitivity(label: String): QrFieldSensitivity =
+        fields.firstOrNull { it.label == label }?.sensitivity
+            ?: throw AssertionError("missing field $label")
 
     private sealed interface Expected {
         data object Text : Expected

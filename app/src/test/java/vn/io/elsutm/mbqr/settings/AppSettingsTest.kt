@@ -54,4 +54,13 @@ class AppSettingsTest {
         assertEquals(50, AppSettings.snappedScanFrameMarginPercent(50f))
         assertEquals(100, AppSettings.snappedScanFrameMarginPercent(100f))
     }
+
+    @Test
+    fun `clamps masking level to the supported range`() {
+        assertEquals(AppSettings.MASKING_OFF, AppSettings.boundedMaskingLevel(-1))
+        assertEquals(AppSettings.MASKING_OFF, AppSettings.boundedMaskingLevel(0))
+        assertEquals(AppSettings.MASKING_LIGHT, AppSettings.boundedMaskingLevel(1))
+        assertEquals(AppSettings.MASKING_FULL, AppSettings.boundedMaskingLevel(2))
+        assertEquals(AppSettings.MASKING_FULL, AppSettings.boundedMaskingLevel(3))
+    }
 }
