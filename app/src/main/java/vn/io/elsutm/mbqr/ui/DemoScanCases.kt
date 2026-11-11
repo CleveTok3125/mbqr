@@ -3,7 +3,6 @@ package vn.io.elsutm.mbqr.ui
 internal data class DemoScanCase(
     val reason: String,
     val raw: String,
-    val parsed: Boolean,
     val mbInstalled: Boolean,
     val handoffReady: Boolean,
 )
@@ -17,7 +16,6 @@ internal val DEMO_SCAN_CASES = listOf(
         reason = "Xác nhận chuyển khoản",
         raw = "00020101021138580010A000000727012800069704220114000000000000010208" +
             "QRIBFTTA53037045802VN5405100005915NGUYEN VAN MUOI62080804DEMO6304B5C2",
-        parsed = true,
         mbInstalled = true,
         handoffReady = true,
     ),
@@ -25,7 +23,6 @@ internal val DEMO_SCAN_CASES = listOf(
         reason = "Chưa cài MB Bank",
         raw = "00020101021138580010A000000727012800069704220114000000000000010208" +
             "QRIBFTTA53037045802VN5405100005915NGUYEN VAN MUOI62080804DEMO6304B5C2",
-        parsed = true,
         mbInstalled = false,
         handoffReady = false,
     ),
@@ -33,7 +30,6 @@ internal val DEMO_SCAN_CASES = listOf(
         reason = "Chưa hỗ trợ ngân hàng",
         raw = "00020101021138580010A000000727012800069999990114000000000000010208" +
             "QRIBFTTA53037045802VN5405100005915NGUYEN VAN MUOI62080804DEMO630440DC",
-        parsed = true,
         mbInstalled = false,
         handoffReady = false,
     ),
@@ -41,14 +37,25 @@ internal val DEMO_SCAN_CASES = listOf(
         reason = "CRC không hợp lệ",
         raw = "00020101021138580010A000000727012800069704220114000000000000010208" +
             "QRIBFTTA53037045802VN5405100005915NGUYEN VAN MUOI62080804DEMO6304B5C1",
-        parsed = false,
         mbInstalled = false,
         handoffReady = false,
     ),
     DemoScanCase(
-        reason = "Không phải VietQR",
+        reason = "Wi-Fi",
+        raw = "WIFI:T:WPA;S:MBQR Demo;P:demo1234;H:false;;",
+        mbInstalled = false,
+        handoffReady = false,
+    ),
+    DemoScanCase(
+        reason = "Danh bạ",
+        raw = "BEGIN:VCARD\nVERSION:3.0\nFN:NGUYEN VAN MUOI\n" +
+            "TEL:0900000000\nEMAIL:demo@example.com\nORG:MBQR\nEND:VCARD",
+        mbInstalled = false,
+        handoffReady = false,
+    ),
+    DemoScanCase(
+        reason = "Liên kết",
         raw = "https://example.com/demo",
-        parsed = false,
         mbInstalled = false,
         handoffReady = false,
     ),

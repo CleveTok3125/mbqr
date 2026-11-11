@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import vn.io.elsutm.mbqr.qr.QrContent
+import vn.io.elsutm.mbqr.qr.QrContentParser
 import vn.io.elsutm.mbqr.vietqr.BankDirectory
 import vn.io.elsutm.mbqr.vietqr.VietQrParseResult
 import vn.io.elsutm.mbqr.vietqr.VietQrParser
@@ -12,10 +14,11 @@ import vn.io.elsutm.mbqr.vietqr.VietQrParser
 class DemoScanCasesTest {
 
     @Test
-    fun `demo cases cover parsed and raw results`() {
-        assertTrue(DEMO_SCAN_CASES.size >= 5)
-        assertTrue(DEMO_SCAN_CASES.any { it.parsed })
-        assertTrue(DEMO_SCAN_CASES.any { !it.parsed })
+    fun `demo cases cover transfer and generic qr results`() {
+        assertTrue(DEMO_SCAN_CASES.size >= 7)
+        assertTrue(QrContentParser.parse(case("Wi-Fi").raw) is QrContent.Details)
+        assertTrue(QrContentParser.parse(case("Danh bạ").raw) is QrContent.Details)
+        assertTrue(QrContentParser.parse(case("Liên kết").raw) is QrContent.Details)
         assertTrue(case("Xác nhận chuyển khoản").mbInstalled)
         assertFalse(case("Chưa cài MB Bank").mbInstalled)
     }
@@ -62,16 +65,25 @@ class DemoScanCasesTest {
             case("CRC không hợp lệ").raw,
         ) as VietQrParseResult.VietQr
 
-        assertEquals(false, data.crcValid)
+        assertFalse(data.crcValid)
     }
 
     @Test
-    fun `url demo payload is not a vietqr`() {
-        assertEquals(
-            VietQrParseResult.NotVietQr,
-            VietQrParser.parse(case("Không phải VietQR").raw),
-        )
+    fun `generic demo payloads expose parsed fields`() {
+        val wifi = QrContentParser.parse(case("Wi-Fi").raw) as QrContent.Details
+        assertEquals("MBQR Demo", wifi.field("Tên mạng"))
+        assertEquals("demo1234", wifi.field("Mật khẩu"))
+
+        val contact = QrContentParser.parse(case("Danh bạ").raw) as QrContent.Details
+        assertEquals("NGUYEN VAN MUOI", contact.field("Tên"))
+
+        val url = QrContentParser.parse(case("Liên kết").raw) as QrContent.Details
+        assertEquals("https://example.com/demo", url.field("Liên kết"))
     }
+
+    private fun QrContent.Details.field(label: String): String =
+        fields.firstOrNull { it.label == label }?.value
+            ?: throw AssertionError("missing field $label")
 
     private fun case(reason: String) = DEMO_SCAN_CASES.first { it.reason == reason }
 }

@@ -113,13 +113,14 @@ import vn.io.elsutm.mbqr.handoff.ClipboardSession
 import vn.io.elsutm.mbqr.handoff.MbLauncher
 import vn.io.elsutm.mbqr.handoff.QrActions
 import vn.io.elsutm.mbqr.handoff.UrlDetector
+import vn.io.elsutm.mbqr.qr.QrContent
+import vn.io.elsutm.mbqr.qr.QrContentParser
+import vn.io.elsutm.mbqr.qr.QrField
 import vn.io.elsutm.mbqr.service.ClipboardExpiryService
 import vn.io.elsutm.mbqr.settings.AppSettings
 import vn.io.elsutm.mbqr.vietqr.BankDirectory
 import vn.io.elsutm.mbqr.vietqr.TransferBuilder
 import vn.io.elsutm.mbqr.vietqr.VietQrData
-import vn.io.elsutm.mbqr.vietqr.VietQrParseResult
-import vn.io.elsutm.mbqr.vietqr.VietQrParser
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -148,7 +149,6 @@ fun ScannerScreen(
     var torchOn by rememberSaveable { mutableStateOf(false) }
     var sheetRaw by rememberSaveable { mutableStateOf<String?>(null) }
     var sheetReason by rememberSaveable { mutableStateOf("") }
-    var sheetParsed by rememberSaveable { mutableStateOf(false) }
     var clipboardExpiresAt by rememberSaveable { mutableStateOf(0L) }
     var clipboardRemaining by rememberSaveable { mutableStateOf(0) }
     var clipboardPersistent by rememberSaveable {
@@ -253,7 +253,7 @@ fun ScannerScreen(
         onDispose { controller?.show(WindowInsetsCompat.Type.statusBars()) }
     }
 
-    fun copyTransfer(text: String) {
+    fun copyToClipboard(text: String) {
         val expiryMillis = AppSettings.clipboardExpiryMillis(context)
         if (expiryMillis <= 0L) {
             // Stop an older timer without clearing the text we are about to copy.
@@ -278,9 +278,19 @@ fun ScannerScreen(
         }
     }
 
+    fun copyField(text: String) {
+        if (demoMode) {
+            Toast.makeText(context, "Đang trong chế độ demo", Toast.LENGTH_SHORT).show()
+            return
+        }
+        copyToClipboard(text)
+        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        Toast.makeText(context, "Đã copy", Toast.LENGTH_SHORT).show()
+    }
+
     fun restoreClipboard() {
         val text = ClipboardSession.text ?: lastClipboardText ?: return
-        copyTransfer(text)
+        copyToClipboard(text)
         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
         Toast.makeText(context, "Đã copy lại", Toast.LENGTH_SHORT).show()
     }
@@ -316,17 +326,9 @@ fun ScannerScreen(
         Toast.makeText(context, "Đã xoá clipboard", Toast.LENGTH_SHORT).show()
     }
 
-    fun showRaw(raw: String, reason: String) {
+    fun showSheet(raw: String, reason: String) {
         scanningEnabled = false
-        sheetRaw = VietQrParser.normalized(raw)
-        sheetParsed = false
-        sheetReason = reason
-    }
-
-    fun showParsed(raw: String, reason: String) {
-        scanningEnabled = false
-        sheetRaw = VietQrParser.normalized(raw)
-        sheetParsed = true
+        sheetRaw = QrContentParser.normalized(raw)
         sheetReason = reason
     }
 
@@ -338,11 +340,7 @@ fun ScannerScreen(
             Toast.makeText(context, "Đang trong chế độ demo", Toast.LENGTH_SHORT).show()
             return
         }
-        if (case.parsed) {
-            showParsed(case.raw, case.reason)
-        } else {
-            showRaw(case.raw, case.reason)
-        }
+        showSheet(case.raw, case.reason)
     }
 
     fun resetHandoff() {
@@ -359,7 +357,7 @@ fun ScannerScreen(
         scanningEnabled = false
         pendingHandoffRaw = raw
         pendingHandoffText = transferText
-        copyTransfer(transferText)
+        copyToClipboard(transferText)
 
         handoffAttempt += 1
         handoffPhaseName = HandoffPhase.Awaiting.name
@@ -383,7 +381,7 @@ fun ScannerScreen(
     fun showFinalConfirmation() {
         val pending = pendingHandoff ?: return
         resetHandoff()
-        showParsed(pending.raw, "Xác nhận chuyển khoản")
+        showSheet(pending.raw, "Xác nhận chuyển khoản")
     }
 
     fun handleDecoded(raw: String) {
@@ -393,11 +391,11 @@ fun ScannerScreen(
         // Any decoded QR is a scan success: either a sheet or the MB handoff follows.
         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
 
-        when (val result = VietQrParser.parse(raw)) {
-            is VietQrParseResult.VietQr -> {
-                val data = result.data
-                if (!result.crcValid) {
-                    showRaw(raw, "CRC không hợp lệ")
+        when (val content = QrContentParser.parse(raw)) {
+            is QrContent.VietQr -> {
+                val data = content.data
+                if (!content.crcValid) {
+                    showSheet(raw, "CRC không hợp lệ")
                     return
                 }
 
@@ -407,24 +405,25 @@ fun ScannerScreen(
                     ?.let { TransferBuilder.build(data, it) }
 
                 if (!MbLauncher.isInstalled(context)) {
-                    showParsed(raw, "Chưa cài MB Bank")
+                    showSheet(raw, "Chưa cài MB Bank")
                     return
                 }
 
                 if (transferText == null) {
-                    showParsed(raw, "Chưa hỗ trợ ngân hàng")
+                    showSheet(raw, "Chưa hỗ trợ ngân hàng")
                     return
                 }
 
                 scanningEnabled = false
                 if (AppSettings.confirmBeforeOpeningMb(context)) {
-                    showParsed(raw, "Xác nhận chuyển khoản")
+                    showSheet(raw, "Xác nhận chuyển khoản")
                 } else {
                     beginHandoff(raw, transferText)
                 }
             }
 
-            VietQrParseResult.NotVietQr -> showRaw(raw, "Không phải VietQR")
+            is QrContent.Details -> showSheet(raw, content.title)
+            is QrContent.Text -> showSheet(raw, "Nội dung QR")
         }
     }
 
@@ -763,17 +762,7 @@ fun ScannerScreen(
 
     val raw = sheetRaw
     if (raw != null) {
-        val parsed = remember(raw) {
-            (VietQrParser.parse(raw) as? VietQrParseResult.VietQr)?.data
-        }
-        val transferText = remember(parsed) {
-            parsed?.let { data ->
-                BankDirectory.find(data.bankBin)
-                    ?.prefix
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { TransferBuilder.build(data, it) }
-            }
-        }
+        val content = remember(raw) { QrContentParser.parse(raw) }
         val mbInstalled = remember(raw, demoMode, demoCaseMbInstalled) {
             if (demoMode) demoCaseMbInstalled else MbLauncher.isInstalled(context)
         }
@@ -785,95 +774,203 @@ fun ScannerScreen(
             },
         ) {
             HideDialogStatusBar(demoMode)
-            if (sheetParsed && parsed != null) {
-                ParsedQrSheetContent(
-                    reason = sheetReason,
-                    data = parsed,
-                    bankName = BankDirectory.find(parsed.bankBin)?.shortName,
-                    copyText = transferText ?: raw,
-                    onOpenMb = if (transferText == null || !mbInstalled) {
-                        null
-                    } else if (demoMode) {
-                        ({})
+            when (content) {
+                is QrContent.VietQr -> {
+                    if (!content.crcValid) {
+                        RawQrSheetContent(
+                            reason = sheetReason,
+                            raw = raw,
+                            onCopy = if (demoMode) {
+                                ({})
+                            } else {
+                                {
+                                    resetHandoff()
+                                    copyToClipboard(raw)
+                                    sheetRaw = null
+                                    scanningEnabled = true
+                                }
+                            },
+                            onShare = if (demoMode) {
+                                ({})
+                            } else {
+                                {
+                                    if (!QrActions.shareText(context, raw)) {
+                                        Toast.makeText(
+                                            context,
+                                            "Không có ứng dụng để chia sẻ",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                }
+                            },
+                            onOpenLink = if (demoMode) {
+                                ({})
+                            } else {
+                                {
+                                    if (!QrActions.openHttpUrl(context, raw)) {
+                                        Toast.makeText(
+                                            context,
+                                            "Không có ứng dụng để mở liên kết",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                }
+                            },
+                            onScanAgain = {
+                                resetHandoff()
+                                sheetRaw = null
+                                scanningEnabled = true
+                            },
+                        )
                     } else {
-                        ({ beginHandoff(raw, transferText) })
-                    },
-                    onCopy = if (demoMode) {
-                        ({})
-                    } else {
-                        {
+                        val data = content.data
+                        val transferText = remember(data) {
+                            BankDirectory.find(data.bankBin)
+                                ?.prefix
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let { TransferBuilder.build(data, it) }
+                        }
+                        ParsedQrSheetContent(
+                            reason = sheetReason,
+                            data = data,
+                            bankName = BankDirectory.find(data.bankBin)?.shortName,
+                            copyText = transferText ?: raw,
+                            onOpenMb = if (transferText == null || !mbInstalled) {
+                                null
+                            } else if (demoMode) {
+                                ({})
+                            } else {
+                                ({ beginHandoff(raw, transferText) })
+                            },
+                            onCopy = if (demoMode) {
+                                ({})
+                            } else {
+                                {
+                                    resetHandoff()
+                                    copyToClipboard(transferText ?: raw)
+                                    sheetRaw = null
+                                    scanningEnabled = true
+                                }
+                            },
+                            onShare = if (demoMode) {
+                                ({})
+                            } else {
+                                {
+                                    val text = transferText ?: raw
+                                    if (!QrActions.shareText(context, text)) {
+                                        Toast.makeText(
+                                            context,
+                                            "Không có ứng dụng để chia sẻ",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                }
+                            },
+                            onFieldLongClick = { value -> copyField(value) },
+                            onScanAgain = {
+                                resetHandoff()
+                                sheetRaw = null
+                                scanningEnabled = true
+                            },
+                        )
+                    }
+                }
+
+                is QrContent.Details -> {
+                    DetailsQrSheetContent(
+                        details = content,
+                        onCopy = if (demoMode) {
+                            ({})
+                        } else {
+                            {
+                                resetHandoff()
+                                copyToClipboard(content.raw)
+                                sheetRaw = null
+                                scanningEnabled = true
+                            }
+                        },
+                        onShare = if (demoMode) {
+                            ({})
+                        } else {
+                            {
+                                if (!QrActions.shareText(context, content.raw)) {
+                                    Toast.makeText(
+                                        context,
+                                        "Không có ứng dụng để chia sẻ",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            }
+                        },
+                        onOpenLink = if (demoMode) {
+                            ({})
+                        } else {
+                            {
+                                if (!QrActions.openHttpUrl(context, content.raw)) {
+                                    Toast.makeText(
+                                        context,
+                                        "Không có ứng dụng để mở liên kết",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            }
+                        },
+                        onFieldLongClick = { field -> copyField(field.copyValue) },
+                        onScanAgain = {
                             resetHandoff()
-                            copyTransfer(transferText ?: raw)
                             sheetRaw = null
                             scanningEnabled = true
-                        }
-                    },
-                    onShare = if (demoMode) {
-                        ({})
-                    } else {
-                        {
-                            val text = transferText ?: raw
-                            if (!QrActions.shareText(context, text)) {
-                                Toast.makeText(
-                                    context,
-                                    "Không có ứng dụng để chia sẻ",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                        },
+                    )
+                }
+
+                is QrContent.Text -> {
+                    RawQrSheetContent(
+                        reason = sheetReason.ifBlank { "Nội dung QR" },
+                        raw = raw,
+                        onCopy = if (demoMode) {
+                            ({})
+                        } else {
+                            {
+                                resetHandoff()
+                                copyToClipboard(raw)
+                                sheetRaw = null
+                                scanningEnabled = true
                             }
-                        }
-                    },
-                    onScanAgain = {
-                        resetHandoff()
-                        sheetRaw = null
-                        scanningEnabled = true
-                    },
-                )
-            } else {
-                RawQrSheetContent(
-                    reason = sheetReason,
-                    raw = raw,
-                    onCopy = if (demoMode) {
-                        ({})
-                    } else {
-                        {
+                        },
+                        onShare = if (demoMode) {
+                            ({})
+                        } else {
+                            {
+                                if (!QrActions.shareText(context, raw)) {
+                                    Toast.makeText(
+                                        context,
+                                        "Không có ứng dụng để chia sẻ",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            }
+                        },
+                        onOpenLink = if (demoMode) {
+                            ({})
+                        } else {
+                            {
+                                if (!QrActions.openHttpUrl(context, raw)) {
+                                    Toast.makeText(
+                                        context,
+                                        "Không có ứng dụng để mở liên kết",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            }
+                        },
+                        onScanAgain = {
                             resetHandoff()
-                            copyTransfer(raw)
                             sheetRaw = null
                             scanningEnabled = true
-                        }
-                    },
-                    onShare = if (demoMode) {
-                        ({})
-                    } else {
-                        {
-                            if (!QrActions.shareText(context, raw)) {
-                                Toast.makeText(
-                                    context,
-                                    "Không có ứng dụng để chia sẻ",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                        }
-                    },
-                    onOpenLink = if (demoMode) {
-                        ({})
-                    } else {
-                        {
-                            if (!QrActions.openHttpUrl(context, raw)) {
-                                Toast.makeText(
-                                    context,
-                                    "Không có ứng dụng để mở liên kết",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                        }
-                    },
-                    onScanAgain = {
-                        resetHandoff()
-                        sheetRaw = null
-                        scanningEnabled = true
-                    },
-                )
+                        },
+                    )
+                }
             }
         }
     }
@@ -994,6 +1091,7 @@ private fun ParsedQrSheetContent(
     onOpenMb: (() -> Unit)?,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onFieldLongClick: (String) -> Unit,
     onScanAgain: () -> Unit,
 ) {
     Column(
@@ -1006,11 +1104,39 @@ private fun ParsedQrSheetContent(
         Text(text = reason, style = MaterialTheme.typography.titleLarge)
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ParsedField(label = "Ngân hàng", value = bankName ?: "<BIN ${data.bankBin}>")
-            ParsedField(label = "Tài khoản", value = data.account)
-            data.amountVnd?.let { ParsedField(label = "Số tiền", value = formatVnd(it)) }
-            data.merchantName?.let { ParsedField(label = "Tên đơn vị", value = it) }
-            data.content?.let { ParsedField(label = "Nội dung", value = it) }
+            val bankLabel = bankName ?: "<BIN ${data.bankBin}>"
+            val bankCopy = bankName ?: data.bankBin
+            ParsedField(
+                label = "Ngân hàng",
+                value = bankLabel,
+                onLongClick = { onFieldLongClick(bankCopy) },
+            )
+            ParsedField(
+                label = "Tài khoản",
+                value = data.account,
+                onLongClick = { onFieldLongClick(data.account) },
+            )
+            data.amountVnd?.let { amount ->
+                ParsedField(
+                    label = "Số tiền",
+                    value = formatVnd(amount),
+                    onLongClick = { onFieldLongClick(amount.toString()) },
+                )
+            }
+            data.merchantName?.let { name ->
+                ParsedField(
+                    label = "Tên đơn vị",
+                    value = name,
+                    onLongClick = { onFieldLongClick(name) },
+                )
+            }
+            data.content?.let { content ->
+                ParsedField(
+                    label = "Nội dung",
+                    value = content,
+                    onLongClick = { onFieldLongClick(content) },
+                )
+            }
         }
 
         SelectionContainer {
@@ -1067,14 +1193,137 @@ private fun ParsedQrSheetContent(
 }
 
 @Composable
-private fun ParsedField(label: String, value: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+private fun ParsedField(
+    label: String,
+    value: String,
+    onLongClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onLongClick,
+            )
+            .padding(vertical = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(text = value, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun DetailsQrSheetContent(
+    details: QrContent.Details,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onOpenLink: () -> Unit,
+    onFieldLongClick: (QrField) -> Unit,
+    onScanAgain: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(text = details.title, style = MaterialTheme.typography.titleLarge)
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            details.fields.forEach { field ->
+                ParsedField(
+                    label = field.label,
+                    value = field.value,
+                    onLongClick = { onFieldLongClick(field) },
+                )
+            }
+        }
+
+        if (!UrlDetector.isHttpUrl(details.raw)) {
+            SelectionContainer {
+                Text(
+                    text = details.raw,
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .heightIn(max = 120.dp)
+                        .verticalScroll(rememberScrollState()),
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Button(onClick = onCopy, modifier = Modifier.weight(1f)) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_copy),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Sao chép")
+            }
+            FilledTonalButton(onClick = onShare, modifier = Modifier.weight(1f)) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_share),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Chia sẻ")
+            }
+        }
+
+        if (UrlDetector.isHttpUrl(details.raw)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                FilledTonalButton(
+                    onClick = onOpenLink,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_open_in_new),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Mở liên kết")
+                }
+                OutlinedButton(onClick = onScanAgain, modifier = Modifier.weight(1f)) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_arrow_forward),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Quét tiếp")
+                }
+            }
+        } else {
+            OutlinedButton(onClick = onScanAgain, modifier = Modifier.fillMaxWidth()) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_arrow_forward),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Quét tiếp")
+            }
+        }
     }
 }
 
