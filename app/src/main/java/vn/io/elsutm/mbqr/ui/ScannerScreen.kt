@@ -64,6 +64,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
@@ -88,6 +89,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
@@ -806,23 +808,131 @@ fun ScannerScreen(
         val mbInstalled = remember(raw, demoMode, demoCaseMbInstalled) {
             if (demoMode) demoCaseMbInstalled else MbLauncher.isInstalled(context)
         }
+        val maxSheetHeight = (LocalConfiguration.current.screenHeightDp.dp - 48.dp)
+            .coerceAtLeast(0.dp)
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
             onDismissRequest = {
                 resetHandoff()
                 sheetRaw = null
                 scanningEnabled = true
             },
+            sheetState = sheetState,
         ) {
-            HideDialogStatusBar(demoMode)
-            when (content) {
-                is QrContent.VietQr -> {
-                    if (!content.crcValid) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = maxSheetHeight)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                HideDialogStatusBar(demoMode)
+                when (content) {
+                    is QrContent.VietQr -> {
+                        if (!content.crcValid) {
+                            RawQrSheetContent(
+                                reason = sheetReason,
+                                raw = raw,
+                                maskingActive = rawMaskingActive(
+                                    sensitiveMaskingLevel,
+                                    hasHiddenVietQrFields(content.data, sensitiveMaskingLevel),
+                                ),
+                                sensitiveMaskingLevel = sensitiveMaskingLevel,
+                                onCopy = if (demoMode) {
+                                    ({})
+                                } else {
+                                    ({ closeSheetAndCopy(raw) })
+                                },
+                                onShare = if (demoMode) {
+                                    ({})
+                                } else {
+                                    ({ shareOrToast(raw) })
+                                },
+                                onScanAgain = { closeSheet() },
+                            )
+                        } else {
+                            val data = content.data
+                            val transferText = remember(data) {
+                                BankDirectory.find(data.bankBin)
+                                    ?.prefix
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?.let { TransferBuilder.build(data, it) }
+                            }
+                            ParsedQrSheetContent(
+                                reason = sheetReason,
+                                data = data,
+                                bankName = BankDirectory.find(data.bankBin)?.shortName,
+                                copyText = transferText ?: raw,
+                                copyTitle = if (transferText != null) {
+                                    TRANSFER_CONTENT_TITLE
+                                } else {
+                                    RAW_CONTENT_TITLE
+                                },
+                                copyMaskingActive = if (transferText != null) {
+                                    isMaskingActive(
+                                        QrFieldSensitivity.Direct,
+                                        sensitiveMaskingLevel,
+                                    )
+                                } else {
+                                    rawMaskingActive(
+                                        sensitiveMaskingLevel,
+                                        hasHiddenVietQrFields(data, sensitiveMaskingLevel),
+                                    )
+                                },
+                                sensitiveMaskingLevel = sensitiveMaskingLevel,
+                                onOpenMb = if (transferText == null || !mbInstalled) {
+                                    null
+                                } else if (demoMode) {
+                                    ({})
+                                } else {
+                                    ({ beginHandoff(raw, transferText) })
+                                },
+                                onCopy = if (demoMode) {
+                                    ({})
+                                } else {
+                                    ({ closeSheetAndCopy(transferText ?: raw) })
+                                },
+                                onShare = if (demoMode) {
+                                    ({})
+                                } else {
+                                    ({ shareOrToast(transferText ?: raw) })
+                                },
+                                onFieldLongClick = { value -> copyField(value) },
+                                onScanAgain = { closeSheet() },
+                            )
+                        }
+                    }
+
+                    is QrContent.Details -> {
+                        DetailsQrSheetContent(
+                            details = content,
+                            sensitiveMaskingLevel = sensitiveMaskingLevel,
+                            onCopy = if (demoMode) {
+                                ({})
+                            } else {
+                                ({ closeSheetAndCopy(content.raw) })
+                            },
+                            onShare = if (demoMode) {
+                                ({})
+                            } else {
+                                ({ shareOrToast(content.raw) })
+                            },
+                            onOpenLink = if (demoMode) {
+                                ({})
+                            } else {
+                                ({ openLinkOrToast(content.raw) })
+                            },
+                            onFieldLongClick = { field -> copyField(field.value) },
+                            onScanAgain = { closeSheet() },
+                        )
+                    }
+
+                    is QrContent.Text -> {
                         RawQrSheetContent(
-                            reason = sheetReason,
+                            reason = sheetReason.ifBlank { "Nội dung QR" },
                             raw = raw,
                             maskingActive = rawMaskingActive(
                                 sensitiveMaskingLevel,
-                                hasHiddenVietQrFields(content.data, sensitiveMaskingLevel),
+                                hasHiddenParsedFields = false,
                             ),
                             sensitiveMaskingLevel = sensitiveMaskingLevel,
                             onCopy = if (demoMode) {
@@ -837,104 +947,7 @@ fun ScannerScreen(
                             },
                             onScanAgain = { closeSheet() },
                         )
-                    } else {
-                        val data = content.data
-                        val transferText = remember(data) {
-                            BankDirectory.find(data.bankBin)
-                                ?.prefix
-                                ?.takeIf { it.isNotBlank() }
-                                ?.let { TransferBuilder.build(data, it) }
-                        }
-                        ParsedQrSheetContent(
-                            reason = sheetReason,
-                            data = data,
-                            bankName = BankDirectory.find(data.bankBin)?.shortName,
-                            copyText = transferText ?: raw,
-                            copyTitle = if (transferText != null) {
-                                TRANSFER_CONTENT_TITLE
-                            } else {
-                                RAW_CONTENT_TITLE
-                            },
-                            copyMaskingActive = if (transferText != null) {
-                                isMaskingActive(
-                                    QrFieldSensitivity.Direct,
-                                    sensitiveMaskingLevel,
-                                )
-                            } else {
-                                rawMaskingActive(
-                                    sensitiveMaskingLevel,
-                                    hasHiddenVietQrFields(data, sensitiveMaskingLevel),
-                                )
-                            },
-                            sensitiveMaskingLevel = sensitiveMaskingLevel,
-                            onOpenMb = if (transferText == null || !mbInstalled) {
-                                null
-                            } else if (demoMode) {
-                                ({})
-                            } else {
-                                ({ beginHandoff(raw, transferText) })
-                            },
-                            onCopy = if (demoMode) {
-                                ({})
-                            } else {
-                                ({ closeSheetAndCopy(transferText ?: raw) })
-                            },
-                            onShare = if (demoMode) {
-                                ({})
-                            } else {
-                                ({ shareOrToast(transferText ?: raw) })
-                            },
-                            onFieldLongClick = { value -> copyField(value) },
-                            onScanAgain = { closeSheet() },
-                        )
                     }
-                }
-
-                is QrContent.Details -> {
-                    DetailsQrSheetContent(
-                        details = content,
-                        sensitiveMaskingLevel = sensitiveMaskingLevel,
-                        onCopy = if (demoMode) {
-                            ({})
-                        } else {
-                            ({ closeSheetAndCopy(content.raw) })
-                        },
-                        onShare = if (demoMode) {
-                            ({})
-                        } else {
-                            ({ shareOrToast(content.raw) })
-                        },
-                        onOpenLink = if (demoMode) {
-                            ({})
-                        } else {
-                            ({ openLinkOrToast(content.raw) })
-                        },
-                        onFieldLongClick = { field -> copyField(field.value) },
-                        onScanAgain = { closeSheet() },
-                    )
-                }
-
-                is QrContent.Text -> {
-                    RawQrSheetContent(
-                        reason = sheetReason.ifBlank { "Nội dung QR" },
-                        raw = raw,
-                        maskingActive = rawMaskingActive(
-                            sensitiveMaskingLevel,
-                            hasHiddenParsedFields = false,
-                        ),
-                        sensitiveMaskingLevel = sensitiveMaskingLevel,
-                        onCopy = if (demoMode) {
-                            ({})
-                        } else {
-                            ({ closeSheetAndCopy(raw) })
-                        },
-                        onShare = if (demoMode) {
-                            ({})
-                        } else {
-                            ({ shareOrToast(raw) })
-                        },
-                        onScanAgain = { closeSheet() },
-                    )
                 }
             }
         }
@@ -1055,6 +1068,52 @@ fun ScannerScreen(
 }
 
 @Composable
+private fun SheetCopyShareActions(
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Button(onClick = onCopy, modifier = Modifier.weight(1f)) {
+            Icon(
+                painter = painterResource(R.drawable.ic_copy),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Sao chép")
+        }
+        FilledTonalButton(onClick = onShare, modifier = Modifier.weight(1f)) {
+            Icon(
+                painter = painterResource(R.drawable.ic_share),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Chia sẻ")
+        }
+    }
+}
+
+@Composable
+private fun SheetScanAgainButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+) {
+    OutlinedButton(onClick = onClick, modifier = modifier) {
+        Icon(
+            painter = painterResource(R.drawable.ic_arrow_forward),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text("Quét tiếp")
+    }
+}
+
+@Composable
 private fun ParsedQrSheetContent(
     reason: String,
     data: VietQrData,
@@ -1138,39 +1197,12 @@ private fun ParsedQrSheetContent(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Button(onClick = onCopy, modifier = Modifier.weight(1f)) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_copy),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Sao chép")
-            }
-            FilledTonalButton(onClick = onShare, modifier = Modifier.weight(1f)) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_share),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Chia sẻ")
-            }
-        }
+        SheetCopyShareActions(
+            onCopy = onCopy,
+            onShare = onShare,
+        )
 
-        OutlinedButton(onClick = onScanAgain, modifier = Modifier.fillMaxWidth()) {
-            Icon(
-                painter = painterResource(R.drawable.ic_arrow_forward),
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Quét tiếp")
-        }
+        SheetScanAgainButton(onClick = onScanAgain)
     }
 }
 
@@ -1386,29 +1418,10 @@ private fun DetailsQrSheetContent(
             )
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Button(onClick = onCopy, modifier = Modifier.weight(1f)) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_copy),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Sao chép")
-            }
-            FilledTonalButton(onClick = onShare, modifier = Modifier.weight(1f)) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_share),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Chia sẻ")
-            }
-        }
+        SheetCopyShareActions(
+            onCopy = onCopy,
+            onShare = onShare,
+        )
 
         if (UrlDetector.isHttpUrl(details.raw)) {
             Row(
@@ -1431,26 +1444,13 @@ private fun DetailsQrSheetContent(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Mở liên kết")
                 }
-                OutlinedButton(onClick = onScanAgain, modifier = Modifier.weight(1f)) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_arrow_forward),
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Quét tiếp")
-                }
+                SheetScanAgainButton(
+                    onClick = onScanAgain,
+                    modifier = Modifier.weight(1f),
+                )
             }
         } else {
-            OutlinedButton(onClick = onScanAgain, modifier = Modifier.fillMaxWidth()) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_arrow_forward),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Quét tiếp")
-            }
+            SheetScanAgainButton(onClick = onScanAgain)
         }
     }
 }
@@ -1480,39 +1480,12 @@ private fun RawQrSheetContent(
             sensitiveMaskingLevel = sensitiveMaskingLevel,
             maxHeight = 220.dp,
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Button(onClick = onCopy, modifier = Modifier.weight(1f)) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_copy),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Sao chép")
-            }
-            FilledTonalButton(onClick = onShare, modifier = Modifier.weight(1f)) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_share),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Chia sẻ")
-            }
-        }
+        SheetCopyShareActions(
+            onCopy = onCopy,
+            onShare = onShare,
+        )
 
-        OutlinedButton(onClick = onScanAgain, modifier = Modifier.fillMaxWidth()) {
-            Icon(
-                painter = painterResource(R.drawable.ic_arrow_forward),
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Quét tiếp")
-        }
+        SheetScanAgainButton(onClick = onScanAgain)
     }
 }
 
