@@ -3,8 +3,36 @@ package vn.io.elsutm.mbqr.camera
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import vn.io.elsutm.mbqr.settings.AnalysisResolutionPreset
+import vn.io.elsutm.mbqr.settings.AnalysisSize
 
 class CameraCapabilitiesTest {
+
+    @Test
+    fun `maps fixed presets to their sizes`() {
+        assertEquals(
+            AnalysisSize(640, 480),
+            CameraCapabilities.resolve(AnalysisResolutionPreset.P640, AnalysisSize(800, 600)),
+        )
+        assertEquals(
+            AnalysisSize(1280, 720),
+            CameraCapabilities.resolve(AnalysisResolutionPreset.P720, AnalysisSize(800, 600)),
+        )
+        assertEquals(
+            AnalysisSize(1920, 1080),
+            CameraCapabilities.resolve(AnalysisResolutionPreset.P1080, AnalysisSize(800, 600)),
+        )
+    }
+
+    @Test
+    fun `resolves the custom size`() {
+        val custom = AnalysisSize(800, 600)
+
+        assertEquals(
+            custom,
+            CameraCapabilities.resolve(AnalysisResolutionPreset.CUSTOM, custom),
+        )
+    }
 
     @Test
     fun `max fps is limited by the sensor and analysis size`() {

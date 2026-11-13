@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -225,77 +226,19 @@ fun ScannerScreen(
     val supportedAnalysisSizes = remember(cameraGranted) {
         CameraCapabilities.supportedSizes(context)
     }
-    val analysisSize = remember(
-        analysisResolutionPreset,
-        customAnalysisSize,
-        supportedAnalysisSizes,
-    ) {
-        CameraCapabilities.resolve(
-            analysisResolutionPreset,
-            customAnalysisSize,
-            supportedAnalysisSizes,
-        )
+    val analysisSize = remember(analysisResolutionPreset, customAnalysisSize) {
+        CameraCapabilities.resolve(analysisResolutionPreset, customAnalysisSize)
     }
     val fpsSupport = remember(cameraGranted, analysisSize) {
         CameraCapabilities.fpsSupport(context, analysisSize)
     }
-    val targetFpsRange = remember(fpsSupport, analysisFps) {
-        CameraCapabilities.targetFpsRange(analysisFps, fpsSupport)
+    val effectiveAnalysisFps = if (fpsSupport.known) {
+        analysisFps.coerceAtMost(fpsSupport.maxFps)
+    } else {
+        analysisFps
     }
-
-    LaunchedEffect(fpsSupport, analysisFpsPreset, customAnalysisFps) {
-        if (!fpsSupport.known) return@LaunchedEffect
-        val maxFps = fpsSupport.maxFps
-        if (customAnalysisFps > maxFps) {
-            customAnalysisFps = maxFps
-            AppSettings.setCustomAnalysisFps(context, maxFps)
-        }
-        if (analysisFpsPreset == AnalysisFpsPreset.CUSTOM) return@LaunchedEffect
-
-        val selectedFps = analysisFpsPreset.fps ?: return@LaunchedEffect
-        if (selectedFps <= maxFps) return@LaunchedEffect
-
-        val targetFps = selectedFps.coerceAtMost(maxFps)
-        val fallback = AnalysisFpsPreset.fromFps(targetFps)
-        if (fallback != AnalysisFpsPreset.CUSTOM) {
-            analysisFpsPreset = fallback
-            AppSettings.setAnalysisFpsPreset(context, fallback)
-        } else {
-            customAnalysisFps = targetFps
-            analysisFpsPreset = AnalysisFpsPreset.CUSTOM
-            AppSettings.setCustomAnalysisFps(context, targetFps)
-            AppSettings.setAnalysisFpsPreset(context, AnalysisFpsPreset.CUSTOM)
-        }
-    }
-
-    LaunchedEffect(supportedAnalysisSizes, analysisResolutionPreset, customAnalysisSize) {
-        if (supportedAnalysisSizes.isEmpty()) return@LaunchedEffect
-        val valid = when (analysisResolutionPreset) {
-            AnalysisResolutionPreset.AUTO -> false
-            AnalysisResolutionPreset.P640 ->
-                CameraCapabilities.contains(supportedAnalysisSizes, AnalysisSize(640, 480))
-            AnalysisResolutionPreset.P720 ->
-                CameraCapabilities.contains(supportedAnalysisSizes, AnalysisSize(1280, 720))
-            AnalysisResolutionPreset.P1080 ->
-                CameraCapabilities.contains(supportedAnalysisSizes, AnalysisSize(1920, 1080))
-            AnalysisResolutionPreset.CUSTOM ->
-                CameraCapabilities.contains(supportedAnalysisSizes, customAnalysisSize)
-        }
-        if (valid) return@LaunchedEffect
-
-        val selectedSize = CameraCapabilities.autoSize(supportedAnalysisSizes)
-        val selectedPreset = when (selectedSize) {
-            AnalysisSize(640, 480) -> AnalysisResolutionPreset.P640
-            AnalysisSize(1280, 720) -> AnalysisResolutionPreset.P720
-            AnalysisSize(1920, 1080) -> AnalysisResolutionPreset.P1080
-            else -> AnalysisResolutionPreset.CUSTOM
-        }
-        analysisResolutionPreset = selectedPreset
-        if (selectedPreset == AnalysisResolutionPreset.CUSTOM) {
-            customAnalysisSize = selectedSize
-            AppSettings.setCustomAnalysisSize(context, selectedSize)
-        }
-        AppSettings.setAnalysisResolutionPreset(context, selectedPreset)
+    val targetFpsRange = remember(fpsSupport, effectiveAnalysisFps) {
+        CameraCapabilities.targetFpsRange(effectiveAnalysisFps, fpsSupport)
     }
 
     var demoMode by remember { mutableStateOf(false) }
@@ -853,7 +796,7 @@ fun ScannerScreen(
                                         analysisSize.width,
                                         analysisSize.height,
                                     ),
-                                    analysisFps = analysisFps,
+                                    analysisFps = effectiveAnalysisFps,
                                     targetFpsRange = targetFpsRange,
                                     onPipelineStatus = pipelineReporter,
                                 )
@@ -1106,7 +1049,7 @@ fun ScannerScreen(
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     HideDialogStatusBar(demoMode)
                     SensitiveMaskingLevelSetting(
@@ -1831,12 +1774,16 @@ private fun SensitiveMaskingLevelSetting(
     level: Int,
     onLevelChange: (Int) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "Mức ẩn dữ liệu nhạy cảm",
             style = MaterialTheme.typography.bodyLarge,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             FilterChip(
                 selected = level == AppSettings.MASKING_OFF,
                 onClick = { onLevelChange(AppSettings.MASKING_OFF) },
@@ -1862,12 +1809,16 @@ private fun DecodePresetSetting(
     selected: QrDecodePreset,
     onSelect: (QrDecodePreset) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             QrDecodePreset.entries.forEach { preset ->
                 FilterChip(
                     selected = selected == preset,
@@ -1887,32 +1838,29 @@ private fun AnalysisResolutionSetting(
     onSelect: (AnalysisResolutionPreset) -> Unit,
     onCustomClick: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "Độ phân giải camera",
             style = MaterialTheme.typography.bodyLarge,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             CameraCapabilities.fixedPresets
-                .filter { (_, size) -> CameraCapabilities.contains(supported, size) }
-                .take(2)
-                .forEach { (preset, size) ->
-                    FilterChip(
-                        selected = selected == preset,
-                        onClick = { onSelect(preset) },
-                        label = { Text(size.toString()) },
-                    )
+                .filter { (preset, size) ->
+                    supported.isEmpty() ||
+                        CameraCapabilities.contains(supported, size) ||
+                        preset == selected
                 }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CameraCapabilities.fixedPresets
-                .filter { (_, size) -> CameraCapabilities.contains(supported, size) }
-                .drop(2)
                 .forEach { (preset, size) ->
                     FilterChip(
                         selected = selected == preset,
                         onClick = { onSelect(preset) },
                         label = { Text(size.toString()) },
+                        enabled = supported.isEmpty() ||
+                            CameraCapabilities.contains(supported, size),
                     )
                 }
             FilterChip(
@@ -1940,29 +1888,30 @@ private fun AnalysisFpsSetting(
     onSelect: (AnalysisFpsPreset) -> Unit,
     onCustomClick: () -> Unit,
 ) {
-    val fixed = AnalysisFpsPreset.fixed.filter { (it.fps ?: 0) <= maxFps }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "FPS phân tích camera",
             style = MaterialTheme.typography.bodyLarge,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            fixed.take(2).forEach { preset ->
-                FilterChip(
-                    selected = selected == preset,
-                    onClick = { onSelect(preset) },
-                    label = { Text("${preset.fps}") },
-                )
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            fixed.drop(2).forEach { preset ->
-                FilterChip(
-                    selected = selected == preset,
-                    onClick = { onSelect(preset) },
-                    label = { Text("${preset.fps}") },
-                )
-            }
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AnalysisFpsPreset.fixed
+                .filter { preset ->
+                    val fps = preset.fps ?: return@filter false
+                    fps <= maxFps || preset == selected
+                }
+                .forEach { preset ->
+                    val fps = preset.fps ?: return@forEach
+                    FilterChip(
+                        selected = selected == preset,
+                        onClick = { onSelect(preset) },
+                        label = { Text("$fps") },
+                        enabled = fps <= maxFps,
+                    )
+                }
             FilterChip(
                 selected = selected == AnalysisFpsPreset.CUSTOM,
                 onClick = onCustomClick,
@@ -1982,7 +1931,6 @@ private fun AnalysisFpsSetting(
 
 private fun QrDecodePreset.label(): String = when (this) {
     QrDecodePreset.FAST -> "Nhanh"
-    QrDecodePreset.BALANCED -> "Cân bằng"
     QrDecodePreset.MAXIMUM -> "Tối đa"
 }
 

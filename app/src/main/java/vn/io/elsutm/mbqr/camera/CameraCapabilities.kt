@@ -6,7 +6,6 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import vn.io.elsutm.mbqr.settings.AnalysisResolutionPreset
 import vn.io.elsutm.mbqr.settings.AnalysisSize
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** Frame-rate capability for one camera and analysis size. */
@@ -135,34 +134,7 @@ object CameraCapabilities {
     fun resolve(
         preset: AnalysisResolutionPreset,
         custom: AnalysisSize,
-        supported: List<AnalysisSize>,
-    ): AnalysisSize {
-        if (supported.isEmpty()) return AnalysisSize(1280, 720)
-
-        fixedPresets.firstOrNull { (candidate, size) ->
-            candidate == preset && contains(supported, size)
-        }?.let { return it.second }
-
-        if (preset == AnalysisResolutionPreset.CUSTOM && contains(supported, custom)) {
-            return custom
-        }
-
-        return autoSize(supported)
-    }
-
-    fun autoSize(supported: List<AnalysisSize>): AnalysisSize {
-        if (supported.isEmpty()) return AnalysisSize(1280, 720)
-
-        val preferred = listOf(
-            AnalysisSize(1920, 1080),
-            AnalysisSize(1280, 720),
-            AnalysisSize(640, 480),
-        )
-        preferred.firstOrNull { contains(supported, it) }?.let { return it }
-
-        return supported.minBy { size ->
-            abs(size.width - 1280) + abs(size.height - 720) +
-                if (size.width * 9 == size.height * 16) 0 else 1_000
-        }
-    }
+    ): AnalysisSize =
+        fixedPresets.firstOrNull { (candidate, _) -> candidate == preset }?.second
+            ?: custom
 }

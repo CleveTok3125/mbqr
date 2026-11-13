@@ -3,13 +3,11 @@ package vn.io.elsutm.mbqr.settings
 /** Decode pipeline for live camera frames or still images. */
 enum class QrDecodePreset {
     FAST,
-    BALANCED,
     MAXIMUM,
 }
 
 /** Requested CameraX analysis resolution. */
 enum class AnalysisResolutionPreset {
-    AUTO,
     P640,
     P720,
     P1080,

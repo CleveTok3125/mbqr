@@ -23,7 +23,7 @@ object AppSettings {
     const val MASKING_FULL = 2
     const val DEFAULT_MASKING_LEVEL = MASKING_OFF
 
-    const val DEFAULT_ANALYSIS_FPS = 10
+    const val DEFAULT_ANALYSIS_FPS = 24
 
     private const val PREFERENCES = "mbqr_settings"
     private const val CONFIRM_BEFORE_OPENING_MB = "confirm_before_opening_mb"
@@ -44,8 +44,8 @@ object AppSettings {
     private const val ANALYSIS_FPS_PRESET = "analysis_fps_preset"
     private const val CUSTOM_ANALYSIS_FPS = "custom_analysis_fps"
     private const val DEFAULT_LIVE_DECODE_PRESET = "FAST"
-    private const val DEFAULT_STILL_DECODE_PRESET = "BALANCED"
-    private const val DEFAULT_ANALYSIS_RESOLUTION_PRESET = "AUTO"
+    private const val DEFAULT_STILL_DECODE_PRESET = "MAXIMUM"
+    private const val DEFAULT_ANALYSIS_RESOLUTION_PRESET = "P720"
     private const val DEFAULT_CUSTOM_ANALYSIS_WIDTH = 1280
     private const val DEFAULT_CUSTOM_ANALYSIS_HEIGHT = 720
 
@@ -122,7 +122,7 @@ object AppSettings {
                 STILL_DECODE_PRESET,
                 DEFAULT_STILL_DECODE_PRESET,
             ),
-            QrDecodePreset.BALANCED,
+            QrDecodePreset.MAXIMUM,
         )
 
     fun setStillDecodePreset(context: Context, preset: QrDecodePreset) {
@@ -212,7 +212,7 @@ object AppSettings {
 
     private fun analysisResolutionPreset(value: String?): AnalysisResolutionPreset =
         AnalysisResolutionPreset.entries.firstOrNull { it.name == value }
-            ?: AnalysisResolutionPreset.AUTO
+            ?: AnalysisResolutionPreset.P720
 
     private fun analysisFpsPreset(value: String?, legacyFps: Int): AnalysisFpsPreset =
         AnalysisFpsPreset.entries.firstOrNull { it.name == value }

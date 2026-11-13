@@ -110,16 +110,15 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
   `50`); clipboard expiry `0` = off, otherwise `15–300s` in 15s steps (default
   `60`). **Thông tin** opens credits, version, source, and license.
 - **Preset giải mã**: live camera and still images have independent
-  `Nhanh` / `Cân bằng` / `Tối đa` presets. Defaults are `Nhanh` for live and
-  `Cân bằng` for images.
-- **Độ phân giải camera**: independent from presets. On first use, the app
-  selects `1920×1080`, then `1280×720`, then `640×480` among camera-supported
-  sizes; if none match, it selects the nearest supported size as `Tùy chỉnh`.
-  Fixed sizes are shown only when supported; `Tùy chỉnh` accepts an exact
-  camera-supported width/height.
-- **FPS phân tích camera**: live rate is capability-driven. Fixed
-  `10 / 24 / 30 / 60` options are shown only when the selected resolution and
-  sensor support them; custom accepts `1–max` FPS. Default is `10`.
+  `Nhanh` / `Tối đa` presets. Defaults are `Nhanh` for live and `Tối đa` for
+  images.
+- **Độ phân giải camera**: independent from presets. Default is `1280×720`;
+  fixed sizes are `640×480` / `1280×720` / `1920×1080`, plus `Tùy chỉnh` with an
+  exact camera-supported width/height. If the selected size is unavailable,
+  CameraX uses the closest supported size.
+- **FPS phân tích camera**: default `24`. Fixed `10 / 24 / 30 / 60` options;
+  values above the selected resolution's sensor limit are disabled; custom
+  accepts `1–max` FPS. The analyzer throttles to the selected rate.
 - **Pipeline status**: optional overlay, off by default, showing the current
   decode stage, source, preset, elapsed time, and result. It is visible only
   while a decode pipeline runs.
@@ -150,9 +149,8 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 ### Decode pipeline
 
 1. Decode the frame or bitmap directly with ZXing-C++.
-2. On failure, `Cân bằng` and `Tối đa` add a white quiet-zone border and decode
-   again.
-3. `Tối đa` then retries with upscaling and denoise.
+2. On failure, `Tối đa` adds a white quiet-zone border and decodes with denoise.
+3. `Tối đa` then retries with upscaling.
 4. Direct decodes are accepted immediately; there is no background-color
    normalization or center-crop stage.
 

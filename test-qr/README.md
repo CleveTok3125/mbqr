@@ -50,12 +50,12 @@ shared images.
 | [`hard/05-inverted.png`](hard/05-inverted.png) | `MBQR hard 05` | Raw sheet |
 | [`hard/06-damaged.png`](hard/06-damaged.png) | `MBQR hard 06` | Raw sheet |
 | [`hard/07-small-in-page.png`](hard/07-small-in-page.png) | `MBQR hard 07` | Raw sheet |
-| [`hard/08-wobbly.png`](hard/08-wobbly.png) | `MBQR hard 08` | Raw sheet; wobbly hand-drawn modules |
+| [`hard/08-wobbly.png`](hard/08-wobbly.png) | `MBQR hard 08` | Raw sheet; wobbly hand-drawn modules; decodes with the `Tối đa` preset |
 | [`hard/09-url-perspective.png`](hard/09-url-perspective.png) | HTTPS URL | Link sheet with `Mở liên kết` |
 | [`hard/10-dots.png`](hard/10-dots.png) | `MBQR hard 10 dots` | Raw sheet; dot-style modules |
 | [`hard/11-logo-center.png`](hard/11-logo-center.png) | `MBQR hard 11 logo center` | Raw sheet; centered logo |
 | [`hard/12-logo-part.png`](hard/12-logo-part.png) | `MBQR hard 12 logo part` | Raw sheet; logo occludes part of the data area |
-| [`hard/13-curved.png`](hard/13-curved.png) | `MBQR hard 13 curved` | Raw sheet; curved/shaded surface |
+| [`hard/13-curved.png`](hard/13-curved.png) | `MBQR hard 13 curved` | Raw sheet; curved/shaded surface; unreliable from the live camera, decodes easily when imported |
 | [`hard/14-high-density.png`](hard/14-high-density.png) | Long text payload | Raw sheet; dense QR on a tilted page |
 | [`hard/15-very-low-contrast.png`](hard/15-very-low-contrast.png) | `MBQR hard 15 low contrast` | Raw sheet; gradient illumination |
 | [`hard/16-line-horizontal.png`](hard/16-line-horizontal.png) | `MBQR hard 16 line horizontal` | Raw sheet; horizontal line style |
@@ -66,6 +66,10 @@ shared images.
 `hard/04-tight-crop.png` has no quiet zone. It only fails when the display
 background matches the finder-pattern color; with a different background it is
 decodable. This is a limitation of the fixture, not the decode pipeline.
+
+`hard/13-curved.png` is unreliable from the live camera but decodes easily when
+the same image is imported. This is a current limitation of the live pipeline;
+making live decoding reliable for this case requires a proprietary barcode SDK.
 
 Automated parser tests use the same payloads. Update both when changing a
 fixture.

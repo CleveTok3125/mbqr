@@ -56,7 +56,7 @@ fun CameraPreview(
     scanCrop: ScanCrop? = null,
     decodePreset: QrDecodePreset = QrDecodePreset.FAST,
     analysisSize: Size = Size(1280, 720),
-    analysisFps: Int = 10,
+    analysisFps: Int = 24,
     targetFpsRange: IntRange? = null,
     onPipelineStatus: ((QrPipelineStatus) -> Unit)? = null,
 ) {

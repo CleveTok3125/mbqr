@@ -6,6 +6,27 @@ import org.junit.Test
 class AppSettingsTest {
 
     @Test
+    fun `offers no automatic resolution preset`() {
+        assertEquals(
+            listOf(
+                AnalysisResolutionPreset.P640,
+                AnalysisResolutionPreset.P720,
+                AnalysisResolutionPreset.P1080,
+                AnalysisResolutionPreset.CUSTOM,
+            ),
+            AnalysisResolutionPreset.entries,
+        )
+    }
+
+    @Test
+    fun `offers only the fast and maximum decode presets`() {
+        assertEquals(
+            listOf(QrDecodePreset.FAST, QrDecodePreset.MAXIMUM),
+            QrDecodePreset.entries,
+        )
+    }
+
+    @Test
     fun `clamps clipboard expiry to the supported range`() {
         assertEquals(
             AppSettings.CLIPBOARD_TIMER_OFF_SECONDS,

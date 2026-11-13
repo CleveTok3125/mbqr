@@ -15,7 +15,9 @@ import kotlin.math.min
  * ZXing-C++ decoder used by both live camera frames and still images.
  *
  * Live frames are read directly from [ImageProxy]. Still images and fallback
- * candidates use [QrDecodePreset] to choose a fixed, predictable pipeline.
+ * candidates use [QrDecodePreset] to choose a fixed, predictable pipeline:
+ * [QrDecodePreset.FAST] decodes directly, [QrDecodePreset.MAXIMUM] adds a
+ * quiet-zone border, denoise, and an upscale retry.
  */
 internal object ZxingCppQrDecoder {
 
@@ -75,25 +77,18 @@ internal object ZxingCppQrDecoder {
 
         val source = cropBitmap(bitmap, crop)
         return try {
-            val kind = if (preset == QrDecodePreset.MAXIMUM) {
-                ReaderKind.Maximum
-            } else {
-                ReaderKind.Still
-            }
             onStage?.invoke(QrPipelineStage.PAD)
             val padded = padWithWhite(source)
             try {
-                decodeCandidate(padded, kind)?.let { return it }
+                decodeCandidate(padded, ReaderKind.Maximum)?.let { return it }
 
-                if (preset == QrDecodePreset.MAXIMUM) {
-                    onStage?.invoke(QrPipelineStage.UPSCALE)
-                    val scaled = scaleUp(padded)
-                    if (scaled !== padded) {
-                        try {
-                            decodeCandidate(scaled, ReaderKind.Maximum)?.let { return it }
-                        } finally {
-                            scaled.recycle()
-                        }
+                onStage?.invoke(QrPipelineStage.UPSCALE)
+                val scaled = scaleUp(padded)
+                if (scaled !== padded) {
+                    try {
+                        decodeCandidate(scaled, ReaderKind.Maximum)?.let { return it }
+                    } finally {
+                        scaled.recycle()
                     }
                 }
             } finally {
