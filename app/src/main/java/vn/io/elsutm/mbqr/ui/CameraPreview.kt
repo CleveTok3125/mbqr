@@ -1,6 +1,11 @@
 package vn.io.elsutm.mbqr.ui
 
+import android.hardware.camera2.CaptureRequest
+import android.util.Range
 import android.util.Size
+import androidx.annotation.OptIn
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
@@ -37,6 +42,7 @@ import vn.io.elsutm.mbqr.camera.ScanCrop
 import vn.io.elsutm.mbqr.settings.QrDecodePreset
 import java.util.concurrent.Executors
 
+@OptIn(markerClass = [ExperimentalCamera2Interop::class])
 @Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
@@ -50,6 +56,8 @@ fun CameraPreview(
     scanCrop: ScanCrop? = null,
     decodePreset: QrDecodePreset = QrDecodePreset.FAST,
     analysisSize: Size = Size(1280, 720),
+    analysisFps: Int = 10,
+    targetFpsRange: IntRange? = null,
     onPipelineStatus: ((QrPipelineStatus) -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -80,6 +88,7 @@ fun CameraPreview(
     SideEffect {
         analyzer.onDecoded = { text -> mainExecutor.execute { currentOnDecoded(text) } }
         analyzer.decodePreset = decodePreset
+        analyzer.targetFps = analysisFps
         analyzer.onPipelineStatus = currentOnPipelineStatus
         analyzer.setScanCrop(scanCrop, previewWidth, previewHeight)
     }
@@ -94,7 +103,7 @@ fun CameraPreview(
 
     var camera by remember { mutableStateOf<Camera?>(null) }
 
-    DisposableEffect(lifecycleOwner, analysisSize) {
+    DisposableEffect(lifecycleOwner, analysisSize, targetFpsRange) {
         val providerFuture = ProcessCameraProvider.getInstance(context)
         var provider: ProcessCameraProvider? = null
         var disposed = false
@@ -118,30 +127,37 @@ fun CameraPreview(
                         .also {
                             it.setSurfaceProvider(previewView.surfaceProvider)
                         }
-                    val analysis = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-                        .setResolutionSelector(
-                            ResolutionSelector.Builder()
-                                .setAspectRatioStrategy(
-                                    AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY,
-                                )
-                                .setResolutionStrategy(
-                                    ResolutionStrategy(
-                                        analysisSize,
-                                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
-                                    ),
-                                )
-                                .build(),
-                        )
-                        .build()
-                        .also { it.setAnalyzer(analysisExecutor, analyzer) }
                     val imageCapture = ImageCapture.Builder()
                         .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                         .build()
-
-                    resolvedProvider.unbindAll()
-                    camera = try {
+                    fun buildAnalysis(applyTargetFps: Boolean): ImageAnalysis {
+                        val builder = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                            .setResolutionSelector(
+                                ResolutionSelector.Builder()
+                                    .setAspectRatioStrategy(
+                                        AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY,
+                                    )
+                                    .setResolutionStrategy(
+                                        ResolutionStrategy(
+                                            analysisSize,
+                                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
+                                        ),
+                                    )
+                                    .build(),
+                            )
+                        if (applyTargetFps && targetFpsRange != null) {
+                            Camera2Interop.Extender(builder).setCaptureRequestOption(
+                                CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+                                Range(targetFpsRange.first, targetFpsRange.last),
+                            )
+                        }
+                        return builder.build().also {
+                            it.setAnalyzer(analysisExecutor, analyzer)
+                        }
+                    }
+                    fun bindWithCapture(analysis: ImageAnalysis): Camera =
                         resolvedProvider.bindToLifecycle(
                             lifecycleOwner,
                             CameraSelector.DEFAULT_BACK_CAMERA,
@@ -149,17 +165,40 @@ fun CameraPreview(
                             analysis,
                             imageCapture,
                         ).also { currentOnImageCaptureBound(imageCapture) }
-                    } catch (_: Exception) {
-                        // Some devices cannot bind three use cases. Keep live scanning
-                        // and hide the photo capture control.
-                        resolvedProvider.unbindAll()
-                        currentOnImageCaptureBound(null)
+
+                    fun bindWithoutCapture(analysis: ImageAnalysis): Camera =
                         resolvedProvider.bindToLifecycle(
                             lifecycleOwner,
                             CameraSelector.DEFAULT_BACK_CAMERA,
                             preview,
                             analysis,
-                        )
+                        ).also { currentOnImageCaptureBound(null) }
+
+                    val analysis = buildAnalysis(applyTargetFps = true)
+
+                    resolvedProvider.unbindAll()
+                    camera = try {
+                        bindWithCapture(analysis)
+                    } catch (_: Exception) {
+                        // Some devices cannot bind three use cases. Keep live scanning
+                        // and hide the photo capture control.
+                        resolvedProvider.unbindAll()
+                        currentOnImageCaptureBound(null)
+                        try {
+                            bindWithoutCapture(analysis)
+                        } catch (_: Exception) {
+                            // Some devices reject the AE target range. Fall back
+                            // to throttling only instead of losing the camera.
+                            resolvedProvider.unbindAll()
+                            val fallbackAnalysis = buildAnalysis(applyTargetFps = false)
+                            try {
+                                bindWithCapture(fallbackAnalysis)
+                            } catch (_: Exception) {
+                                resolvedProvider.unbindAll()
+                                currentOnImageCaptureBound(null)
+                                bindWithoutCapture(fallbackAnalysis)
+                            }
+                        }
                     }
 
                     currentOnCameraBound(camera)

@@ -23,6 +23,8 @@ object AppSettings {
     const val MASKING_FULL = 2
     const val DEFAULT_MASKING_LEVEL = MASKING_OFF
 
+    const val DEFAULT_ANALYSIS_FPS = 10
+
     private const val PREFERENCES = "mbqr_settings"
     private const val CONFIRM_BEFORE_OPENING_MB = "confirm_before_opening_mb"
     private const val CLIPBOARD_EXPIRY_SECONDS = "clipboard_expiry_seconds"
@@ -38,6 +40,9 @@ object AppSettings {
     private const val CUSTOM_ANALYSIS_WIDTH = "custom_analysis_width"
     private const val CUSTOM_ANALYSIS_HEIGHT = "custom_analysis_height"
     private const val PIPELINE_STATUS_ENABLED = "pipeline_status_enabled"
+    private const val ANALYSIS_FPS = "analysis_fps"
+    private const val ANALYSIS_FPS_PRESET = "analysis_fps_preset"
+    private const val CUSTOM_ANALYSIS_FPS = "custom_analysis_fps"
     private const val DEFAULT_LIVE_DECODE_PRESET = "FAST"
     private const val DEFAULT_STILL_DECODE_PRESET = "BALANCED"
     private const val DEFAULT_ANALYSIS_RESOLUTION_PRESET = "AUTO"
@@ -145,6 +150,46 @@ object AppSettings {
         preferences(context).edit { putBoolean(PIPELINE_STATUS_ENABLED, enabled) }
     }
 
+    fun analysisFpsPreset(context: Context): AnalysisFpsPreset {
+        val prefs = preferences(context)
+        val legacyFps = prefs.getInt(ANALYSIS_FPS, DEFAULT_ANALYSIS_FPS)
+        return analysisFpsPreset(
+            prefs.getString(ANALYSIS_FPS_PRESET, null),
+            legacyFps,
+        )
+    }
+
+    fun setAnalysisFpsPreset(context: Context, preset: AnalysisFpsPreset) {
+        preferences(context).edit {
+            putString(ANALYSIS_FPS_PRESET, preset.name)
+            preset.fps?.let { putInt(ANALYSIS_FPS, it) }
+        }
+    }
+
+    fun customAnalysisFps(context: Context): Int {
+        val prefs = preferences(context)
+        return boundedAnalysisFps(
+            prefs.getInt(
+                CUSTOM_ANALYSIS_FPS,
+                prefs.getInt(ANALYSIS_FPS, DEFAULT_ANALYSIS_FPS),
+            ),
+        )
+    }
+
+    fun setCustomAnalysisFps(context: Context, fps: Int) {
+        val bounded = boundedAnalysisFps(fps)
+        preferences(context).edit {
+            putInt(CUSTOM_ANALYSIS_FPS, bounded)
+            putInt(ANALYSIS_FPS, bounded)
+        }
+    }
+
+    fun analysisFps(context: Context): Int =
+        analysisFpsPreset(context).fps ?: customAnalysisFps(context)
+
+    internal fun boundedAnalysisFps(fps: Int): Int =
+        fps.coerceAtLeast(1)
+
     fun customAnalysisSize(context: Context): AnalysisSize {
         val prefs = preferences(context)
         return AnalysisSize(
@@ -168,6 +213,10 @@ object AppSettings {
     private fun analysisResolutionPreset(value: String?): AnalysisResolutionPreset =
         AnalysisResolutionPreset.entries.firstOrNull { it.name == value }
             ?: AnalysisResolutionPreset.AUTO
+
+    private fun analysisFpsPreset(value: String?, legacyFps: Int): AnalysisFpsPreset =
+        AnalysisFpsPreset.entries.firstOrNull { it.name == value }
+            ?: AnalysisFpsPreset.fromFps(legacyFps)
 
     fun clipboardExpirySeconds(context: Context): Int =
         boundedExpirySeconds(

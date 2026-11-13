@@ -22,6 +22,9 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
     var decodePreset: QrDecodePreset = QrDecodePreset.FAST
 
     @Volatile
+    var targetFps: Int = 10
+
+    @Volatile
     var onPipelineStatus: ((QrPipelineStatus) -> Unit)? = null
 
     @Volatile
@@ -36,7 +39,8 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
             if (!enabled) return
 
             val now = SystemClock.elapsedRealtime()
-            if (now - lastAttemptAt < THROTTLE_MILLIS) return
+            val throttleMillis = (1_000L / targetFps.coerceAtLeast(1)).coerceAtLeast(1L)
+            if (now - lastAttemptAt < throttleMillis) return
             lastAttemptAt = now
 
             val text = decodeGuard.accept(decode(image)) ?: return
@@ -136,7 +140,6 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
     }
 
     private companion object {
-        const val THROTTLE_MILLIS = 100L
         const val FALLBACK_INTERVAL_MILLIS = 500L
     }
 }

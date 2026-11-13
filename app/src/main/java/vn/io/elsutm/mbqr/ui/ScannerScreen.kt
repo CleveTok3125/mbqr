@@ -129,6 +129,7 @@ import vn.io.elsutm.mbqr.qr.QrContentParser
 import vn.io.elsutm.mbqr.qr.QrField
 import vn.io.elsutm.mbqr.qr.QrFieldSensitivity
 import vn.io.elsutm.mbqr.service.ClipboardExpiryService
+import vn.io.elsutm.mbqr.settings.AnalysisFpsPreset
 import vn.io.elsutm.mbqr.settings.AnalysisResolutionPreset
 import vn.io.elsutm.mbqr.settings.AnalysisSize
 import vn.io.elsutm.mbqr.settings.AppSettings
@@ -206,11 +207,21 @@ fun ScannerScreen(
     var pipelineStatusEnabled by remember {
         mutableStateOf(AppSettings.pipelineStatusEnabled(context))
     }
+    var analysisFpsPreset by remember {
+        mutableStateOf(AppSettings.analysisFpsPreset(context))
+    }
+    var customAnalysisFps by remember {
+        mutableStateOf(AppSettings.customAnalysisFps(context))
+    }
+    val analysisFps = analysisFpsPreset.fps ?: customAnalysisFps
     var pipelineStatus by remember { mutableStateOf<QrPipelineStatus?>(null) }
     var showCustomResolutionDialog by rememberSaveable { mutableStateOf(false) }
     var customResolutionWidth by rememberSaveable { mutableStateOf("") }
     var customResolutionHeight by rememberSaveable { mutableStateOf("") }
     var customResolutionError by rememberSaveable { mutableStateOf<String?>(null) }
+    var showCustomFpsDialog by rememberSaveable { mutableStateOf(false) }
+    var customFpsInput by rememberSaveable { mutableStateOf("") }
+    var customFpsError by rememberSaveable { mutableStateOf<String?>(null) }
     val supportedAnalysisSizes = remember(cameraGranted) {
         CameraCapabilities.supportedSizes(context)
     }
@@ -224,6 +235,37 @@ fun ScannerScreen(
             customAnalysisSize,
             supportedAnalysisSizes,
         )
+    }
+    val fpsSupport = remember(cameraGranted, analysisSize) {
+        CameraCapabilities.fpsSupport(context, analysisSize)
+    }
+    val targetFpsRange = remember(fpsSupport, analysisFps) {
+        CameraCapabilities.targetFpsRange(analysisFps, fpsSupport)
+    }
+
+    LaunchedEffect(fpsSupport, analysisFpsPreset, customAnalysisFps) {
+        if (!fpsSupport.known) return@LaunchedEffect
+        val maxFps = fpsSupport.maxFps
+        if (customAnalysisFps > maxFps) {
+            customAnalysisFps = maxFps
+            AppSettings.setCustomAnalysisFps(context, maxFps)
+        }
+        if (analysisFpsPreset == AnalysisFpsPreset.CUSTOM) return@LaunchedEffect
+
+        val selectedFps = analysisFpsPreset.fps ?: return@LaunchedEffect
+        if (selectedFps <= maxFps) return@LaunchedEffect
+
+        val targetFps = selectedFps.coerceAtMost(maxFps)
+        val fallback = AnalysisFpsPreset.fromFps(targetFps)
+        if (fallback != AnalysisFpsPreset.CUSTOM) {
+            analysisFpsPreset = fallback
+            AppSettings.setAnalysisFpsPreset(context, fallback)
+        } else {
+            customAnalysisFps = targetFps
+            analysisFpsPreset = AnalysisFpsPreset.CUSTOM
+            AppSettings.setCustomAnalysisFps(context, targetFps)
+            AppSettings.setAnalysisFpsPreset(context, AnalysisFpsPreset.CUSTOM)
+        }
     }
 
     LaunchedEffect(supportedAnalysisSizes, analysisResolutionPreset, customAnalysisSize) {
@@ -811,6 +853,8 @@ fun ScannerScreen(
                                         analysisSize.width,
                                         analysisSize.height,
                                     ),
+                                    analysisFps = analysisFps,
+                                    targetFpsRange = targetFpsRange,
                                     onPipelineStatus = pipelineReporter,
                                 )
                             }
@@ -1103,6 +1147,20 @@ fun ScannerScreen(
                             showCustomResolutionDialog = true
                         },
                     )
+                    AnalysisFpsSetting(
+                        selected = analysisFpsPreset,
+                        custom = customAnalysisFps,
+                        maxFps = fpsSupport.maxFps,
+                        onSelect = { preset ->
+                            analysisFpsPreset = preset
+                            AppSettings.setAnalysisFpsPreset(context, preset)
+                        },
+                        onCustomClick = {
+                            customFpsInput = customAnalysisFps.toString()
+                            customFpsError = null
+                            showCustomFpsDialog = true
+                        },
+                    )
                     SettingsToggle(
                         label = "Hiển thị trạng thái xử lý pipeline",
                         checked = pipelineStatusEnabled,
@@ -1229,6 +1287,70 @@ fun ScannerScreen(
                                 AnalysisResolutionPreset.CUSTOM,
                             )
                             showCustomResolutionDialog = false
+                        }
+                    },
+                ) {
+                    Text("Lưu")
+                }
+            },
+        )
+    }
+
+    if (showCustomFpsDialog) {
+        AlertDialog(
+            onDismissRequest = { showCustomFpsDialog = false },
+            title = { Text("FPS tùy chỉnh") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = customFpsInput,
+                        onValueChange = {
+                            customFpsInput = it.filter(Char::isDigit).take(4)
+                        },
+                        label = { Text("FPS") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    customFpsError?.let { error ->
+                        Text(
+                            text = error,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomFpsDialog = false }) {
+                    Text("Hủy")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val fps = customFpsInput.toIntOrNull()
+                        customFpsError = when {
+                            fps == null ->
+                                "FPS không hợp lệ"
+                            fps < 1 ->
+                                "FPS phải lớn hơn 0"
+                            fps > fpsSupport.maxFps ->
+                                if (fpsSupport.known) {
+                                    "Camera chỉ hỗ trợ tối đa ${fpsSupport.maxFps} FPS"
+                                } else {
+                                    "Không xác định được giới hạn FPS của camera"
+                                }
+                            else -> null
+                        }
+                        if (customFpsError == null && fps != null) {
+                            customAnalysisFps = fps
+                            analysisFpsPreset = AnalysisFpsPreset.CUSTOM
+                            AppSettings.setCustomAnalysisFps(context, fps)
+                            AppSettings.setAnalysisFpsPreset(
+                                context,
+                                AnalysisFpsPreset.CUSTOM,
+                            )
+                            showCustomFpsDialog = false
                         }
                     },
                 ) {
@@ -1800,6 +1922,54 @@ private fun AnalysisResolutionSetting(
                     Text(
                         if (selected == AnalysisResolutionPreset.CUSTOM) {
                             "Tùy chỉnh ${custom.width}×${custom.height}"
+                        } else {
+                            "Tùy chỉnh"
+                        },
+                    )
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AnalysisFpsSetting(
+    selected: AnalysisFpsPreset,
+    custom: Int,
+    maxFps: Int,
+    onSelect: (AnalysisFpsPreset) -> Unit,
+    onCustomClick: () -> Unit,
+) {
+    val fixed = AnalysisFpsPreset.fixed.filter { (it.fps ?: 0) <= maxFps }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = "FPS phân tích camera",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            fixed.take(2).forEach { preset ->
+                FilterChip(
+                    selected = selected == preset,
+                    onClick = { onSelect(preset) },
+                    label = { Text("${preset.fps}") },
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            fixed.drop(2).forEach { preset ->
+                FilterChip(
+                    selected = selected == preset,
+                    onClick = { onSelect(preset) },
+                    label = { Text("${preset.fps}") },
+                )
+            }
+            FilterChip(
+                selected = selected == AnalysisFpsPreset.CUSTOM,
+                onClick = onCustomClick,
+                label = {
+                    Text(
+                        if (selected == AnalysisFpsPreset.CUSTOM) {
+                            "Tùy chỉnh $custom FPS"
                         } else {
                             "Tùy chỉnh"
                         },

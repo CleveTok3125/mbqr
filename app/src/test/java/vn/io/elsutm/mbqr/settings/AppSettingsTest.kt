@@ -56,6 +56,28 @@ class AppSettingsTest {
     }
 
     @Test
+    fun `clamps analysis fps to a positive value`() {
+        assertEquals(1, AppSettings.boundedAnalysisFps(0))
+        assertEquals(1, AppSettings.boundedAnalysisFps(-10))
+        assertEquals(10, AppSettings.boundedAnalysisFps(10))
+        assertEquals(24, AppSettings.boundedAnalysisFps(24))
+        assertEquals(120, AppSettings.boundedAnalysisFps(120))
+    }
+
+    @Test
+    fun `maps fixed analysis fps values to presets`() {
+        assertEquals(
+            listOf(10, 24, 30, 60),
+            AnalysisFpsPreset.fixed.map { it.fps },
+        )
+        assertEquals(AnalysisFpsPreset.FPS_10, AnalysisFpsPreset.fromFps(10))
+        assertEquals(AnalysisFpsPreset.FPS_24, AnalysisFpsPreset.fromFps(24))
+        assertEquals(AnalysisFpsPreset.FPS_30, AnalysisFpsPreset.fromFps(30))
+        assertEquals(AnalysisFpsPreset.FPS_60, AnalysisFpsPreset.fromFps(60))
+        assertEquals(AnalysisFpsPreset.CUSTOM, AnalysisFpsPreset.fromFps(15))
+    }
+
+    @Test
     fun `clamps masking level to the supported range`() {
         assertEquals(AppSettings.MASKING_OFF, AppSettings.boundedMaskingLevel(-1))
         assertEquals(AppSettings.MASKING_OFF, AppSettings.boundedMaskingLevel(0))

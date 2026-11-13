@@ -117,6 +117,9 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
   sizes; if none match, it selects the nearest supported size as `Tùy chỉnh`.
   Fixed sizes are shown only when supported; `Tùy chỉnh` accepts an exact
   camera-supported width/height.
+- **FPS phân tích camera**: live rate is capability-driven. Fixed
+  `10 / 24 / 30 / 60` options are shown only when the selected resolution and
+  sensor support them; custom accepts `1–max` FPS. Default is `10`.
 - **Pipeline status**: optional overlay, off by default, showing the current
   decode stage, source, preset, elapsed time, and result. It is visible only
   while a decode pipeline runs.
