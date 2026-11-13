@@ -1670,7 +1670,7 @@ private fun CreditsContent(
             value = "github.com/CleveTok3125/mbqr",
             onClick = onOpenSource,
         )
-        CreditItem(label = "Giấy phép", value = "GPL-3.0")
+        CreditItem(label = "Giấy phép", value = "GPL-3.0 · ZXing-C++ Apache-2.0")
     }
 }
 

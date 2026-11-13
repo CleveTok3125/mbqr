@@ -2,6 +2,9 @@ package vn.io.elsutm.mbqr.camera
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import kotlin.math.max
 
 /**
@@ -55,10 +58,37 @@ object PhotoQrDecoder {
         } ?: return null
 
         return try {
-            val luminance = readable.toLuminance() ?: return null
-            QrDecodeCore.decode(luminance, readable.width, readable.height)
+            val luminance = readable.toLuminance()
+            val javaText = luminance?.let {
+                QrDecodeCore.decode(it, readable.width, readable.height)
+            }
+            if (javaText != null) return javaText
+
+            val decoderBitmap = try {
+                if (readable.hasAlpha()) readable.flattenOnWhite() else readable
+            } catch (_: Throwable) {
+                return null
+            }
+            try {
+                ZxingCppQrDecoder.decode(decoderBitmap)
+            } finally {
+                if (decoderBitmap !== readable) decoderBitmap.recycle()
+            }
         } finally {
             if (readable !== bitmap) readable.recycle()
+        }
+    }
+
+    private fun Bitmap.flattenOnWhite(): Bitmap {
+        val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        try {
+            val canvas = Canvas(output)
+            canvas.drawColor(Color.WHITE)
+            canvas.drawBitmap(this, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+            return output
+        } catch (error: Throwable) {
+            output.recycle()
+            throw error
         }
     }
 

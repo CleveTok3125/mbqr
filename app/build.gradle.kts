@@ -102,6 +102,7 @@ dependencies {
     implementation("androidx.camera:camera-view:1.6.2")
 
     implementation("com.google.zxing:core:3.5.4")
+    implementation("io.github.zxing-cpp:android:3.1.1")
 
     testImplementation("junit:junit:4.13.2")
 

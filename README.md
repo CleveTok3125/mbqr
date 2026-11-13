@@ -126,6 +126,8 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 - **Chỉ quét QR trong khung** is off by default. When on, live camera frames are
   cropped to the frame plus a margin (0–100% of the tightest gap). Shutter,
   gallery, and shared images scan the full image.
+- Java ZXing handles live frames. Still images retry through native ZXing-C++
+  when the Java path cannot detect a code.
 - Shared images use the sender's URI once; no gallery or storage permission is
   requested.
 - The merchant-name field is appended only when present; MB resolves the
@@ -195,4 +197,4 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 
 ## License
 
-GPL-3.0. See `LICENSE`.
+GPL-3.0. See `LICENSE`. ZXing-C++ is used under Apache-2.0.
