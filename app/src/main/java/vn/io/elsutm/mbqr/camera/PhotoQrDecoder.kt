@@ -5,20 +5,27 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.os.SystemClock
+import vn.io.elsutm.mbqr.settings.QrDecodePreset
 import kotlin.math.max
 
 /**
- * Decodes a QR from a captured photo or an imported image.
+ * Decodes a QR from a captured photo, imported image, or shared image with
+ * ZXing-C++.
  *
- * The image is converted to the same 8-bit luminance plane used by the live
- * camera, then passed to [QrDecodeCore]. Downsampling is bounded so a large
- * capture does not exhaust the heap.
+ * Downsampling is bounded so a large capture does not exhaust the heap.
+ * Transparent images are composited onto white before decoding.
  */
 object PhotoQrDecoder {
 
     private const val MAX_DIMENSION = 4096
 
-    fun decodeImage(bytes: ByteArray): String? = try {
+    fun decodeImage(
+        bytes: ByteArray,
+        preset: QrDecodePreset,
+        source: QrPipelineSource = QrPipelineSource.IMPORT,
+        onPipelineStatus: ((QrPipelineStatus) -> Unit)? = null,
+    ): String? = try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
@@ -36,7 +43,7 @@ object PhotoQrDecoder {
             val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
             bitmap?.let {
                 try {
-                    decodeBitmap(it)
+                    decodeBitmap(it, preset, source, onPipelineStatus)
                 } finally {
                     it.recycle()
                 }
@@ -48,33 +55,72 @@ object PhotoQrDecoder {
         null
     }
 
-    fun decodeBitmap(bitmap: Bitmap): String? {
+    fun decodeBitmap(
+        bitmap: Bitmap,
+        preset: QrDecodePreset,
+        source: QrPipelineSource = QrPipelineSource.IMPORT,
+        onPipelineStatus: ((QrPipelineStatus) -> Unit)? = null,
+    ): String? {
         if (bitmap.width <= 0 || bitmap.height <= 0) return null
+
+        val startedAt = SystemClock.elapsedRealtime()
+        var brightness: Int? = null
+        fun emit(
+            stage: QrPipelineStage,
+            active: Boolean,
+            success: Boolean?,
+        ) {
+            onPipelineStatus?.invoke(
+                QrPipelineStatus(
+                    source = source,
+                    preset = preset,
+                    stage = stage,
+                    active = active,
+                    success = success,
+                    detail = "",
+                    elapsedMs = SystemClock.elapsedRealtime() - startedAt,
+                    brightness = brightness,
+                ),
+            )
+        }
 
         val readable = if (bitmap.config == Bitmap.Config.HARDWARE) {
             bitmap.copy(Bitmap.Config.ARGB_8888, false)
         } else {
             bitmap
         } ?: return null
+        brightness = if (onPipelineStatus != null) QrBrightness.fromBitmap(readable) else null
+
+        val decoderBitmap = try {
+            if (readable.hasAlpha()) readable.flattenOnWhite() else readable
+        } catch (_: Throwable) {
+            if (readable !== bitmap) readable.recycle()
+            return null
+        }
 
         return try {
-            val luminance = readable.toLuminance()
-            val javaText = luminance?.let {
-                QrDecodeCore.decode(it, readable.width, readable.height)
+            emit(QrPipelineStage.DIRECT, active = true, success = null)
+            val direct = ZxingCppQrDecoder.decode(decoderBitmap)
+            if (direct != null) {
+                emit(QrPipelineStage.DIRECT, active = false, success = true)
+                return direct
             }
-            if (javaText != null) return javaText
 
-            val decoderBitmap = try {
-                if (readable.hasAlpha()) readable.flattenOnWhite() else readable
-            } catch (_: Throwable) {
+            if (preset == QrDecodePreset.FAST) {
+                emit(QrPipelineStage.DIRECT, active = false, success = false)
                 return null
             }
-            try {
-                ZxingCppQrDecoder.decode(decoderBitmap)
-            } finally {
-                if (decoderBitmap !== readable) decoderBitmap.recycle()
-            }
+
+            val text = ZxingCppQrDecoder.decodeWithFallback(
+                decoderBitmap,
+                null,
+                preset,
+                onStage = { stage -> emit(stage, active = true, success = null) },
+            )
+            emit(QrPipelineStage.DONE, active = false, success = text != null)
+            text
         } finally {
+            if (decoderBitmap !== readable) decoderBitmap.recycle()
             if (readable !== bitmap) readable.recycle()
         }
     }
@@ -89,35 +135,6 @@ object PhotoQrDecoder {
         } catch (error: Throwable) {
             output.recycle()
             throw error
-        }
-    }
-
-    private fun Bitmap.toLuminance(): ByteArray? {
-        val pixels = IntArray(width * height)
-        return try {
-            getPixels(pixels, 0, width, 0, 0, width, height)
-            val luminance = ByteArray(pixels.size)
-            for (index in pixels.indices) {
-                val color = pixels[index]
-                val alpha = color ushr 24
-                var red = (color shr 16) and 0xFF
-                var green = (color shr 8) and 0xFF
-                var blue = color and 0xFF
-
-                // Transparent PNG backgrounds are commonly stored as black;
-                // composite them onto white before calculating luminance.
-                if (alpha != 0xFF) {
-                    val inverse = 255 - alpha
-                    red = (red * alpha + 255 * inverse + 127) / 255
-                    green = (green * alpha + 255 * inverse + 127) / 255
-                    blue = (blue * alpha + 255 * inverse + 127) / 255
-                }
-
-                luminance[index] = ((red * 77 + green * 150 + blue * 29) shr 8).toByte()
-            }
-            luminance
-        } catch (_: Exception) {
-            null
         }
     }
 }

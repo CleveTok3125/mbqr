@@ -49,6 +49,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -62,6 +63,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -97,6 +99,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -110,7 +113,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import vn.io.elsutm.mbqr.BuildConfig
 import vn.io.elsutm.mbqr.R
+import vn.io.elsutm.mbqr.camera.CameraCapabilities
 import vn.io.elsutm.mbqr.camera.PhotoQrDecoder
+import vn.io.elsutm.mbqr.camera.QrPipelineSource
+import vn.io.elsutm.mbqr.camera.QrPipelineStage
+import vn.io.elsutm.mbqr.camera.QrPipelineStatus
 import vn.io.elsutm.mbqr.camera.ScanCrop
 import vn.io.elsutm.mbqr.handoff.ClipboardHandoff
 import vn.io.elsutm.mbqr.handoff.ClipboardSession
@@ -122,7 +129,10 @@ import vn.io.elsutm.mbqr.qr.QrContentParser
 import vn.io.elsutm.mbqr.qr.QrField
 import vn.io.elsutm.mbqr.qr.QrFieldSensitivity
 import vn.io.elsutm.mbqr.service.ClipboardExpiryService
+import vn.io.elsutm.mbqr.settings.AnalysisResolutionPreset
+import vn.io.elsutm.mbqr.settings.AnalysisSize
 import vn.io.elsutm.mbqr.settings.AppSettings
+import vn.io.elsutm.mbqr.settings.QrDecodePreset
 import vn.io.elsutm.mbqr.vietqr.BankDirectory
 import vn.io.elsutm.mbqr.vietqr.TransferBuilder
 import vn.io.elsutm.mbqr.vietqr.VietQrData
@@ -181,6 +191,71 @@ fun ScannerScreen(
     var scanFrameMarginPercent by remember {
         mutableStateOf(AppSettings.scanFrameMarginPercent(context))
     }
+    var liveDecodePreset by remember {
+        mutableStateOf(AppSettings.liveDecodePreset(context))
+    }
+    var stillDecodePreset by remember {
+        mutableStateOf(AppSettings.stillDecodePreset(context))
+    }
+    var analysisResolutionPreset by remember {
+        mutableStateOf(AppSettings.analysisResolutionPreset(context))
+    }
+    var customAnalysisSize by remember {
+        mutableStateOf(AppSettings.customAnalysisSize(context))
+    }
+    var pipelineStatusEnabled by remember {
+        mutableStateOf(AppSettings.pipelineStatusEnabled(context))
+    }
+    var pipelineStatus by remember { mutableStateOf<QrPipelineStatus?>(null) }
+    var showCustomResolutionDialog by rememberSaveable { mutableStateOf(false) }
+    var customResolutionWidth by rememberSaveable { mutableStateOf("") }
+    var customResolutionHeight by rememberSaveable { mutableStateOf("") }
+    var customResolutionError by rememberSaveable { mutableStateOf<String?>(null) }
+    val supportedAnalysisSizes = remember(cameraGranted) {
+        CameraCapabilities.supportedSizes(context)
+    }
+    val analysisSize = remember(
+        analysisResolutionPreset,
+        customAnalysisSize,
+        supportedAnalysisSizes,
+    ) {
+        CameraCapabilities.resolve(
+            analysisResolutionPreset,
+            customAnalysisSize,
+            supportedAnalysisSizes,
+        )
+    }
+
+    LaunchedEffect(supportedAnalysisSizes, analysisResolutionPreset, customAnalysisSize) {
+        if (supportedAnalysisSizes.isEmpty()) return@LaunchedEffect
+        val valid = when (analysisResolutionPreset) {
+            AnalysisResolutionPreset.AUTO -> false
+            AnalysisResolutionPreset.P640 ->
+                CameraCapabilities.contains(supportedAnalysisSizes, AnalysisSize(640, 480))
+            AnalysisResolutionPreset.P720 ->
+                CameraCapabilities.contains(supportedAnalysisSizes, AnalysisSize(1280, 720))
+            AnalysisResolutionPreset.P1080 ->
+                CameraCapabilities.contains(supportedAnalysisSizes, AnalysisSize(1920, 1080))
+            AnalysisResolutionPreset.CUSTOM ->
+                CameraCapabilities.contains(supportedAnalysisSizes, customAnalysisSize)
+        }
+        if (valid) return@LaunchedEffect
+
+        val selectedSize = CameraCapabilities.autoSize(supportedAnalysisSizes)
+        val selectedPreset = when (selectedSize) {
+            AnalysisSize(640, 480) -> AnalysisResolutionPreset.P640
+            AnalysisSize(1280, 720) -> AnalysisResolutionPreset.P720
+            AnalysisSize(1920, 1080) -> AnalysisResolutionPreset.P1080
+            else -> AnalysisResolutionPreset.CUSTOM
+        }
+        analysisResolutionPreset = selectedPreset
+        if (selectedPreset == AnalysisResolutionPreset.CUSTOM) {
+            customAnalysisSize = selectedSize
+            AppSettings.setCustomAnalysisSize(context, selectedSize)
+        }
+        AppSettings.setAnalysisResolutionPreset(context, selectedPreset)
+    }
+
     var demoMode by remember { mutableStateOf(false) }
     var demoCountdown by remember { mutableStateOf(60) }
     var demoCaseIndex by remember { mutableStateOf(0) }
@@ -203,6 +278,11 @@ fun ScannerScreen(
 
     val captureExecutor = remember { Executors.newSingleThreadExecutor() }
     val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
+    val pipelineReporter: ((QrPipelineStatus) -> Unit)? = if (pipelineStatusEnabled) {
+        { status -> mainExecutor.execute { pipelineStatus = status } }
+    } else {
+        null
+    }
 
     DisposableEffect(Unit) {
         onDispose { captureExecutor.shutdown() }
@@ -479,7 +559,12 @@ fun ScannerScreen(
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     val text = try {
-                        decodeCapturedImage(image)
+                        decodeCapturedImage(
+                            image,
+                            stillDecodePreset,
+                            QrPipelineSource.SHUTTER,
+                            pipelineReporter,
+                        )
                     } finally {
                         image.close()
                     }
@@ -511,7 +596,10 @@ fun ScannerScreen(
         )
     }
 
-    fun decodePickedImage(uri: Uri) {
+    fun decodePickedImage(
+        uri: Uri,
+        source: QrPipelineSource = QrPipelineSource.IMPORT,
+    ) {
         captureExecutor.execute {
             val bytes = try {
                 context.contentResolver.openInputStream(uri)?.use { stream ->
@@ -520,7 +608,14 @@ fun ScannerScreen(
             } catch (_: Exception) {
                 null
             }
-            val text = bytes?.let { PhotoQrDecoder.decodeImage(it) }
+            val text = bytes?.let {
+                PhotoQrDecoder.decodeImage(
+                    it,
+                    stillDecodePreset,
+                    source,
+                    pipelineReporter,
+                )
+            }
             mainExecutor.execute {
                 if (text != null) {
                     handleDecoded(text)
@@ -541,7 +636,7 @@ fun ScannerScreen(
         resetHandoff()
         sheetRaw = null
         scanningEnabled = true
-        decodePickedImage(uri)
+        decodePickedImage(uri, QrPipelineSource.SHARED)
     }
 
     DisposableEffect(lifecycleOwner, handoffPhase) {
@@ -711,6 +806,12 @@ fun ScannerScreen(
                                         zoomRatio = state.zoomRatio
                                     },
                                     scanCrop = scanCrop,
+                                    decodePreset = liveDecodePreset,
+                                    analysisSize = android.util.Size(
+                                        analysisSize.width,
+                                        analysisSize.height,
+                                    ),
+                                    onPipelineStatus = pipelineReporter,
                                 )
                             }
                         }
@@ -760,6 +861,7 @@ fun ScannerScreen(
                                 }
                             },
                             onShowSettings = { showSettings = true },
+                            pipelineStatus = pipelineStatus,
                         )
 
                         if (camera != null || demoMode) {
@@ -970,6 +1072,46 @@ fun ScannerScreen(
                             AppSettings.setSensitiveMaskingLevel(context, level)
                         },
                     )
+                    DecodePresetSetting(
+                        label = "Preset camera trực tiếp",
+                        selected = liveDecodePreset,
+                        onSelect = { preset ->
+                            liveDecodePreset = preset
+                            AppSettings.setLiveDecodePreset(context, preset)
+                        },
+                    )
+                    DecodePresetSetting(
+                        label = "Preset ảnh",
+                        selected = stillDecodePreset,
+                        onSelect = { preset ->
+                            stillDecodePreset = preset
+                            AppSettings.setStillDecodePreset(context, preset)
+                        },
+                    )
+                    AnalysisResolutionSetting(
+                        selected = analysisResolutionPreset,
+                        custom = customAnalysisSize,
+                        supported = supportedAnalysisSizes,
+                        onSelect = { preset ->
+                            analysisResolutionPreset = preset
+                            AppSettings.setAnalysisResolutionPreset(context, preset)
+                        },
+                        onCustomClick = {
+                            customResolutionWidth = customAnalysisSize.width.toString()
+                            customResolutionHeight = customAnalysisSize.height.toString()
+                            customResolutionError = null
+                            showCustomResolutionDialog = true
+                        },
+                    )
+                    SettingsToggle(
+                        label = "Hiển thị trạng thái xử lý pipeline",
+                        checked = pipelineStatusEnabled,
+                        onCheckedChange = { enabled ->
+                            pipelineStatusEnabled = enabled
+                            if (!enabled) pipelineStatus = null
+                            AppSettings.setPipelineStatusEnabled(context, enabled)
+                        },
+                    )
                     SettingsToggle(
                         label = "Hiện bảng xác nhận trước khi mở MB Bank",
                         checked = confirmBeforeOpeningMb,
@@ -1022,6 +1164,75 @@ fun ScannerScreen(
             confirmButton = {
                 TextButton(onClick = { showSettings = false }) {
                     Text("Đóng")
+                }
+            },
+        )
+    }
+
+    if (showCustomResolutionDialog) {
+        AlertDialog(
+            onDismissRequest = { showCustomResolutionDialog = false },
+            title = { Text("Độ phân giải tùy chỉnh") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = customResolutionWidth,
+                        onValueChange = { customResolutionWidth = it.filter(Char::isDigit) },
+                        label = { Text("Chiều rộng") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    OutlinedTextField(
+                        value = customResolutionHeight,
+                        onValueChange = { customResolutionHeight = it.filter(Char::isDigit) },
+                        label = { Text("Chiều cao") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    customResolutionError?.let { error ->
+                        Text(
+                            text = error,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomResolutionDialog = false }) {
+                    Text("Hủy")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val width = customResolutionWidth.toIntOrNull()
+                        val height = customResolutionHeight.toIntOrNull()
+                        val requested = if (width != null && height != null) {
+                            AnalysisSize(width, height)
+                        } else {
+                            null
+                        }
+                        customResolutionError = when {
+                            requested == null || requested.width <= 0 || requested.height <= 0 ->
+                                "Kích thước không hợp lệ"
+                            !CameraCapabilities.contains(supportedAnalysisSizes, requested) ->
+                                "Camera không hỗ trợ độ phân giải này"
+                            else -> null
+                        }
+                        if (customResolutionError == null && requested != null) {
+                            customAnalysisSize = requested
+                            analysisResolutionPreset = AnalysisResolutionPreset.CUSTOM
+                            AppSettings.setCustomAnalysisSize(context, requested)
+                            AppSettings.setAnalysisResolutionPreset(
+                                context,
+                                AnalysisResolutionPreset.CUSTOM,
+                            )
+                            showCustomResolutionDialog = false
+                        }
+                    },
+                ) {
+                    Text("Lưu")
                 }
             },
         )
@@ -1524,6 +1735,88 @@ private fun SensitiveMaskingLevelSetting(
 }
 
 @Composable
+private fun DecodePresetSetting(
+    label: String,
+    selected: QrDecodePreset,
+    onSelect: (QrDecodePreset) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            QrDecodePreset.entries.forEach { preset ->
+                FilterChip(
+                    selected = selected == preset,
+                    onClick = { onSelect(preset) },
+                    label = { Text(preset.label()) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnalysisResolutionSetting(
+    selected: AnalysisResolutionPreset,
+    custom: AnalysisSize,
+    supported: List<AnalysisSize>,
+    onSelect: (AnalysisResolutionPreset) -> Unit,
+    onCustomClick: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = "Độ phân giải camera",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CameraCapabilities.fixedPresets
+                .filter { (_, size) -> CameraCapabilities.contains(supported, size) }
+                .take(2)
+                .forEach { (preset, size) ->
+                    FilterChip(
+                        selected = selected == preset,
+                        onClick = { onSelect(preset) },
+                        label = { Text(size.toString()) },
+                    )
+                }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CameraCapabilities.fixedPresets
+                .filter { (_, size) -> CameraCapabilities.contains(supported, size) }
+                .drop(2)
+                .forEach { (preset, size) ->
+                    FilterChip(
+                        selected = selected == preset,
+                        onClick = { onSelect(preset) },
+                        label = { Text(size.toString()) },
+                    )
+                }
+            FilterChip(
+                selected = selected == AnalysisResolutionPreset.CUSTOM,
+                onClick = onCustomClick,
+                label = {
+                    Text(
+                        if (selected == AnalysisResolutionPreset.CUSTOM) {
+                            "Tùy chỉnh ${custom.width}×${custom.height}"
+                        } else {
+                            "Tùy chỉnh"
+                        },
+                    )
+                },
+            )
+        }
+    }
+}
+
+private fun QrDecodePreset.label(): String = when (this) {
+    QrDecodePreset.FAST -> "Nhanh"
+    QrDecodePreset.BALANCED -> "Cân bằng"
+    QrDecodePreset.MAXIMUM -> "Tối đa"
+}
+
+@Composable
 private fun SettingsToggle(
     label: String,
     checked: Boolean,
@@ -1720,6 +2013,7 @@ private fun ScannerOverlay(
     showImage: Boolean,
     onPickImage: () -> Unit,
     onShowSettings: () -> Unit,
+    pipelineStatus: QrPipelineStatus? = null,
 ) {
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val clipboardLabel = when {
@@ -1867,6 +2161,15 @@ private fun ScannerOverlay(
                     }
                 }
             }
+
+            pipelineStatus?.takeIf { it.active }?.let { status ->
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    PipelineStatusPill(status)
+                }
+            }
         }
 
         Box(
@@ -1880,7 +2183,44 @@ private fun ScannerOverlay(
                     shape = RoundedCornerShape(28.dp),
                 ),
         )
+
     }
+}
+
+@Composable
+private fun PipelineStatusPill(status: QrPipelineStatus) {
+    val result = when (status.success) {
+        true -> "ok"
+        false -> "fail"
+        null -> "running"
+    }
+    Text(
+        text = "${status.source.label()} · ${status.preset.label()}\n" +
+            "${status.stage.label()} · $result · ${status.elapsedMs}ms · " +
+            "brightness=${status.brightness ?: "-"}",
+        color = Color.White,
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier
+            .background(
+                color = Color.Black.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(50),
+            )
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
+private fun QrPipelineSource.label(): String = when (this) {
+    QrPipelineSource.LIVE -> "Live"
+    QrPipelineSource.IMPORT -> "Import"
+    QrPipelineSource.SHUTTER -> "Shutter"
+    QrPipelineSource.SHARED -> "Share"
+}
+
+private fun QrPipelineStage.label(): String = when (this) {
+    QrPipelineStage.DIRECT -> "direct"
+    QrPipelineStage.PAD -> "pad"
+    QrPipelineStage.UPSCALE -> "upscale"
+    QrPipelineStage.DONE -> "done"
 }
 
 @Composable
@@ -2023,14 +2363,24 @@ private fun PermissionContent(
     }
 }
 
-private fun decodeCapturedImage(image: ImageProxy): String? {
+private fun decodeCapturedImage(
+    image: ImageProxy,
+    preset: QrDecodePreset,
+    source: QrPipelineSource,
+    onPipelineStatus: ((QrPipelineStatus) -> Unit)?,
+): String? {
     if (image.format == ImageFormat.JPEG) {
         val buffer = image.planes.firstOrNull()?.buffer ?: return null
         val bytes = ByteArray(buffer.remaining())
         buffer.get(bytes)
-        return PhotoQrDecoder.decodeImage(bytes)
+        return PhotoQrDecoder.decodeImage(bytes, preset, source, onPipelineStatus)
     }
-    return PhotoQrDecoder.decodeBitmap(image.toBitmap())
+    return PhotoQrDecoder.decodeBitmap(
+        image.toBitmap(),
+        preset,
+        source,
+        onPipelineStatus,
+    )
 }
 
 private fun Context.findActivity(): Activity? {

@@ -32,7 +32,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Observer
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import vn.io.elsutm.mbqr.camera.QrAnalyzer
+import vn.io.elsutm.mbqr.camera.QrPipelineStatus
 import vn.io.elsutm.mbqr.camera.ScanCrop
+import vn.io.elsutm.mbqr.settings.QrDecodePreset
 import java.util.concurrent.Executors
 
 @Composable
@@ -46,6 +48,9 @@ fun CameraPreview(
     onImageCaptureBound: (ImageCapture?) -> Unit = {},
     onZoomStateChanged: (ZoomState) -> Unit = {},
     scanCrop: ScanCrop? = null,
+    decodePreset: QrDecodePreset = QrDecodePreset.FAST,
+    analysisSize: Size = Size(1280, 720),
+    onPipelineStatus: ((QrPipelineStatus) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -58,17 +63,24 @@ fun CameraPreview(
     val analyzer = remember { QrAnalyzer() }
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
     val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
+
+    DisposableEffect(Unit) {
+        onDispose { analysisExecutor.shutdown() }
+    }
     val currentOnDecoded by rememberUpdatedState(onDecoded)
     val currentOnCameraError by rememberUpdatedState(onCameraError)
     val currentOnCameraBound by rememberUpdatedState(onCameraBound)
     val currentOnImageCaptureBound by rememberUpdatedState(onImageCaptureBound)
     val currentOnZoomStateChanged by rememberUpdatedState(onZoomStateChanged)
+    val currentOnPipelineStatus by rememberUpdatedState(onPipelineStatus)
 
     var previewWidth by remember { mutableStateOf(0) }
     var previewHeight by remember { mutableStateOf(0) }
 
     SideEffect {
         analyzer.onDecoded = { text -> mainExecutor.execute { currentOnDecoded(text) } }
+        analyzer.decodePreset = decodePreset
+        analyzer.onPipelineStatus = currentOnPipelineStatus
         analyzer.setScanCrop(scanCrop, previewWidth, previewHeight)
     }
 
@@ -82,7 +94,7 @@ fun CameraPreview(
 
     var camera by remember { mutableStateOf<Camera?>(null) }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, analysisSize) {
         val providerFuture = ProcessCameraProvider.getInstance(context)
         var provider: ProcessCameraProvider? = null
         var disposed = false
@@ -116,7 +128,7 @@ fun CameraPreview(
                                 )
                                 .setResolutionStrategy(
                                     ResolutionStrategy(
-                                        Size(1280, 720),
+                                        analysisSize,
                                         ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
                                     ),
                                 )
@@ -164,7 +176,6 @@ fun CameraPreview(
             camera = null
             currentOnCameraBound(null)
             currentOnImageCaptureBound(null)
-            analysisExecutor.shutdown()
         }
     }
 

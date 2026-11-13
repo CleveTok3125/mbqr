@@ -109,6 +109,17 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
   (default `0`); confirmation; scan-inside-frame with margin `0–100%` (default
   `50`); clipboard expiry `0` = off, otherwise `15–300s` in 15s steps (default
   `60`). **Thông tin** opens credits, version, source, and license.
+- **Preset giải mã**: live camera and still images have independent
+  `Nhanh` / `Cân bằng` / `Tối đa` presets. Defaults are `Nhanh` for live and
+  `Cân bằng` for images.
+- **Độ phân giải camera**: independent from presets. On first use, the app
+  selects `1920×1080`, then `1280×720`, then `640×480` among camera-supported
+  sizes; if none match, it selects the nearest supported size as `Tùy chỉnh`.
+  Fixed sizes are shown only when supported; `Tùy chỉnh` accepts an exact
+  camera-supported width/height.
+- **Pipeline status**: optional overlay, off by default, showing the current
+  decode stage, source, preset, elapsed time, and result. It is visible only
+  while a decode pipeline runs.
 - **Đèn / Ảnh**: torch; scan a gallery image or one image shared from another app.
 - **Arc dial**: zoom `1x` to camera max; ticks at powers of two, minor ticks per
   interval, final tail clipped at max; haptics at ticks and endpoints.
@@ -126,12 +137,24 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 - **Chỉ quét QR trong khung** is off by default. When on, live camera frames are
   cropped to the frame plus a margin (0–100% of the tightest gap). Shutter,
   gallery, and shared images scan the full image.
-- Java ZXing handles live frames. Still images retry through native ZXing-C++
-  when the Java path cannot detect a code.
+- ZXing-C++ handles live frames and still images. Java ZXing is retained only
+  for parsing payload formats.
 - Shared images use the sender's URI once; no gallery or storage permission is
   requested.
 - The merchant-name field is appended only when present; MB resolves the
   recipient separately.
+
+### Decode pipeline
+
+1. Decode the frame or bitmap directly with ZXing-C++.
+2. On failure, `Cân bằng` and `Tối đa` add a white quiet-zone border and decode
+   again.
+3. `Tối đa` then retries with upscaling and denoise.
+4. Direct decodes are accepted immediately; there is no background-color
+   normalization or center-crop stage.
+
+Live and still presets are independent. Camera analysis resolution is also
+independent and affects live frames only.
 
 ### Other QR formats
 

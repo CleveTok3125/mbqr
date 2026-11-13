@@ -32,6 +32,17 @@ object AppSettings {
     private const val LEGACY_HIDE_SENSITIVE_FIELDS = "hide_sensitive_fields"
     private const val DEFAULT_CONFIRM_BEFORE_OPENING_MB = true
     private const val DEFAULT_SCAN_INSIDE_FRAME = false
+    private const val LIVE_DECODE_PRESET = "live_decode_preset"
+    private const val STILL_DECODE_PRESET = "still_decode_preset"
+    private const val ANALYSIS_RESOLUTION_PRESET = "analysis_resolution_preset"
+    private const val CUSTOM_ANALYSIS_WIDTH = "custom_analysis_width"
+    private const val CUSTOM_ANALYSIS_HEIGHT = "custom_analysis_height"
+    private const val PIPELINE_STATUS_ENABLED = "pipeline_status_enabled"
+    private const val DEFAULT_LIVE_DECODE_PRESET = "FAST"
+    private const val DEFAULT_STILL_DECODE_PRESET = "BALANCED"
+    private const val DEFAULT_ANALYSIS_RESOLUTION_PRESET = "AUTO"
+    private const val DEFAULT_CUSTOM_ANALYSIS_WIDTH = 1280
+    private const val DEFAULT_CUSTOM_ANALYSIS_HEIGHT = 720
 
     fun confirmBeforeOpeningMb(context: Context): Boolean =
         preferences(context).getBoolean(
@@ -86,6 +97,77 @@ object AppSettings {
             putInt(SCAN_FRAME_MARGIN_PERCENT_KEY, boundedScanFrameMarginPercent(percent))
         }
     }
+
+    fun liveDecodePreset(context: Context): QrDecodePreset =
+        decodePreset(
+            preferences(context).getString(
+                LIVE_DECODE_PRESET,
+                DEFAULT_LIVE_DECODE_PRESET,
+            ),
+            QrDecodePreset.FAST,
+        )
+
+    fun setLiveDecodePreset(context: Context, preset: QrDecodePreset) {
+        preferences(context).edit { putString(LIVE_DECODE_PRESET, preset.name) }
+    }
+
+    fun stillDecodePreset(context: Context): QrDecodePreset =
+        decodePreset(
+            preferences(context).getString(
+                STILL_DECODE_PRESET,
+                DEFAULT_STILL_DECODE_PRESET,
+            ),
+            QrDecodePreset.BALANCED,
+        )
+
+    fun setStillDecodePreset(context: Context, preset: QrDecodePreset) {
+        preferences(context).edit { putString(STILL_DECODE_PRESET, preset.name) }
+    }
+
+    fun analysisResolutionPreset(context: Context): AnalysisResolutionPreset =
+        analysisResolutionPreset(
+            preferences(context).getString(
+                ANALYSIS_RESOLUTION_PRESET,
+                DEFAULT_ANALYSIS_RESOLUTION_PRESET,
+            ),
+        )
+
+    fun setAnalysisResolutionPreset(context: Context, preset: AnalysisResolutionPreset) {
+        preferences(context).edit {
+            putString(ANALYSIS_RESOLUTION_PRESET, preset.name)
+        }
+    }
+
+    fun pipelineStatusEnabled(context: Context): Boolean =
+        preferences(context).getBoolean(PIPELINE_STATUS_ENABLED, false)
+
+    fun setPipelineStatusEnabled(context: Context, enabled: Boolean) {
+        preferences(context).edit { putBoolean(PIPELINE_STATUS_ENABLED, enabled) }
+    }
+
+    fun customAnalysisSize(context: Context): AnalysisSize {
+        val prefs = preferences(context)
+        return AnalysisSize(
+            prefs.getInt(CUSTOM_ANALYSIS_WIDTH, DEFAULT_CUSTOM_ANALYSIS_WIDTH)
+                .coerceAtLeast(1),
+            prefs.getInt(CUSTOM_ANALYSIS_HEIGHT, DEFAULT_CUSTOM_ANALYSIS_HEIGHT)
+                .coerceAtLeast(1),
+        )
+    }
+
+    fun setCustomAnalysisSize(context: Context, size: AnalysisSize) {
+        preferences(context).edit {
+            putInt(CUSTOM_ANALYSIS_WIDTH, size.width.coerceAtLeast(1))
+            putInt(CUSTOM_ANALYSIS_HEIGHT, size.height.coerceAtLeast(1))
+        }
+    }
+
+    private fun decodePreset(value: String?, fallback: QrDecodePreset): QrDecodePreset =
+        QrDecodePreset.entries.firstOrNull { it.name == value } ?: fallback
+
+    private fun analysisResolutionPreset(value: String?): AnalysisResolutionPreset =
+        AnalysisResolutionPreset.entries.firstOrNull { it.name == value }
+            ?: AnalysisResolutionPreset.AUTO
 
     fun clipboardExpirySeconds(context: Context): Int =
         boundedExpirySeconds(
