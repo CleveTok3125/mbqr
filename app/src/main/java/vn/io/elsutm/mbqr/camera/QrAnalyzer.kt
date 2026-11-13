@@ -1,7 +1,6 @@
 package vn.io.elsutm.mbqr.camera
 
 import android.os.SystemClock
-import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import kotlin.math.min
@@ -25,34 +24,19 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
 
     private var lastAttemptAt = 0L
     private val decodeGuard = DecodeGuard()
-    private var loggedFirstFrame = false
-    private var lastFailureLogAt = 0L
 
     override fun analyze(image: ImageProxy) {
         try {
             if (!enabled) return
-
-            if (!loggedFirstFrame) {
-                Log.d(
-                    TAG,
-                    "frame ${image.width}x${image.height} format=${image.format} " +
-                        "rotation=${image.imageInfo.rotationDegrees}",
-                )
-                loggedFirstFrame = true
-            }
 
             val now = SystemClock.elapsedRealtime()
             if (now - lastAttemptAt < THROTTLE_MILLIS) return
             lastAttemptAt = now
 
             val text = decodeGuard.accept(decode(image)) ?: return
-            Log.d(TAG, "decoded payload length=${text.length}")
             onDecoded(text)
-        } catch (error: Exception) {
-            if (SystemClock.elapsedRealtime() - lastFailureLogAt > LOG_INTERVAL_MILLIS) {
-                lastFailureLogAt = SystemClock.elapsedRealtime()
-                Log.w(TAG, "frame analysis failed", error)
-            }
+        } catch (_: Exception) {
+            // A bad frame must not stop the analyzer.
         } finally {
             image.close()
         }
@@ -127,9 +111,7 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
     }
 
     private companion object {
-        const val TAG = "MBQR"
         const val THROTTLE_MILLIS = 100L
-        const val LOG_INTERVAL_MILLIS = 2_000L
     }
 }
 

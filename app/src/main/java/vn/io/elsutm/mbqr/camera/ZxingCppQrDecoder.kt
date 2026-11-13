@@ -1,7 +1,6 @@
 package vn.io.elsutm.mbqr.camera
 
 import android.graphics.Bitmap
-import android.util.Log
 import zxingcpp.BarcodeReader
 
 /**
@@ -11,8 +10,6 @@ import zxingcpp.BarcodeReader
  * loaded lazily when a still image cannot be decoded by the Java path.
  */
 internal object ZxingCppQrDecoder {
-
-    private const val TAG = "MBQR"
 
     @Volatile
     private var reader: BarcodeReader? = null
@@ -26,17 +23,15 @@ internal object ZxingCppQrDecoder {
 
         val active = reader ?: try {
             createReader().also { reader = it }
-        } catch (error: Throwable) {
+        } catch (_: Throwable) {
             unavailable = true
-            Log.w(TAG, "zxing-cpp load failed", error)
             null
         } ?: return null
 
         return try {
             active.read(bitmap)
                 .firstNotNullOfOrNull { it.text?.takeIf(String::isNotBlank) }
-        } catch (error: Throwable) {
-            Log.w(TAG, "zxing-cpp decode failed", error)
+        } catch (_: Throwable) {
             null
         }
     }
