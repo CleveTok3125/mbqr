@@ -4,15 +4,6 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.BinaryBitmap
-import com.google.zxing.DecodeHintType
-import com.google.zxing.LuminanceSource
-import com.google.zxing.MultiFormatReader
-import com.google.zxing.NotFoundException
-import com.google.zxing.PlanarYUVLuminanceSource
-import com.google.zxing.common.GlobalHistogramBinarizer
-import com.google.zxing.common.HybridBinarizer
 import kotlin.math.min
 
 /**
@@ -31,17 +22,6 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
 
     @Volatile
     private var cropViewport = CropViewport(crop = null, viewWidth = 0, viewHeight = 0)
-
-    private val reader = MultiFormatReader().apply {
-        setHints(
-            mapOf(
-                DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
-                DecodeHintType.CHARACTER_SET to "UTF-8",
-                DecodeHintType.TRY_HARDER to true,
-                DecodeHintType.ALSO_INVERTED to true,
-            ),
-        )
-    }
 
     private var lastAttemptAt = 0L
     private val decodeGuard = DecodeGuard()
@@ -104,38 +84,9 @@ class QrAnalyzer : ImageAnalysis.Analyzer {
                 rotationDegrees = image.imageInfo.rotationDegrees,
             )
         }
-        val source = if (pixelCrop != null) {
-            PlanarYUVLuminanceSource(
-                luminance,
-                width,
-                height,
-                pixelCrop.left,
-                pixelCrop.top,
-                pixelCrop.width,
-                pixelCrop.height,
-                false,
-            )
-        } else {
-            PlanarYUVLuminanceSource(luminance, width, height, 0, 0, width, height, false)
-        }
-
         // QR detection is rotation independent; skipping the rotation copy keeps
         // analysis fast enough to run on every throttled frame.
-        return decodeSource(source)
-    }
-
-    private fun decodeSource(source: LuminanceSource): String? {
-        val binarizers = listOf(HybridBinarizer(source), GlobalHistogramBinarizer(source))
-        for (binarizer in binarizers) {
-            try {
-                return reader.decodeWithState(BinaryBitmap(binarizer)).text
-            } catch (_: NotFoundException) {
-                // Try the next binarizer.
-            } finally {
-                reader.reset()
-            }
-        }
-        return null
+        return QrDecodeCore.decode(luminance, width, height, pixelCrop)
     }
 
     private fun extractLuminance(

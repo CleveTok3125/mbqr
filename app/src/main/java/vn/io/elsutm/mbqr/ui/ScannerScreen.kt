@@ -520,7 +520,7 @@ fun ScannerScreen(
             } catch (_: Exception) {
                 null
             }
-            val text = bytes?.let { PhotoQrDecoder.decodeJpeg(it) }
+            val text = bytes?.let { PhotoQrDecoder.decodeImage(it) }
             mainExecutor.execute {
                 if (text != null) {
                     handleDecoded(text)
@@ -2028,7 +2028,7 @@ private fun decodeCapturedImage(image: ImageProxy): String? {
         val buffer = image.planes.firstOrNull()?.buffer ?: return null
         val bytes = ByteArray(buffer.remaining())
         buffer.get(bytes)
-        return PhotoQrDecoder.decodeJpeg(bytes)
+        return PhotoQrDecoder.decodeImage(bytes)
     }
     return PhotoQrDecoder.decodeBitmap(image.toBitmap())
 }

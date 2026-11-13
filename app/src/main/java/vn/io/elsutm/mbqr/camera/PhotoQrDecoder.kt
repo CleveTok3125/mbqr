@@ -2,26 +2,20 @@ package vn.io.elsutm.mbqr.camera
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.BinaryBitmap
-import com.google.zxing.DecodeHintType
-import com.google.zxing.LuminanceSource
-import com.google.zxing.MultiFormatReader
-import com.google.zxing.NotFoundException
-import com.google.zxing.RGBLuminanceSource
-import com.google.zxing.common.GlobalHistogramBinarizer
-import com.google.zxing.common.HybridBinarizer
 import kotlin.math.max
 
 /**
- * Decodes a QR from a full-resolution captured photo. The image is sampled down
- * to a bounded size first so a 50 MP capture does not exhaust the heap.
+ * Decodes a QR from a captured photo or an imported image.
+ *
+ * The image is converted to the same 8-bit luminance plane used by the live
+ * camera, then passed to [QrDecodeCore]. Downsampling is bounded so a large
+ * capture does not exhaust the heap.
  */
 object PhotoQrDecoder {
 
     private const val MAX_DIMENSION = 4096
 
-    fun decodeJpeg(bytes: ByteArray): String? = try {
+    fun decodeImage(bytes: ByteArray): String? = try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
@@ -31,7 +25,11 @@ object PhotoQrDecoder {
             while (max(bounds.outWidth, bounds.outHeight) / sampleSize > MAX_DIMENSION) {
                 sampleSize *= 2
             }
-            val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+                inPremultiplied = false
+            }
             val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
             bitmap?.let {
                 try {
@@ -50,34 +48,46 @@ object PhotoQrDecoder {
     fun decodeBitmap(bitmap: Bitmap): String? {
         if (bitmap.width <= 0 || bitmap.height <= 0) return null
 
-        val pixels = IntArray(bitmap.width * bitmap.height)
-        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-        val source = RGBLuminanceSource(bitmap.width, bitmap.height, pixels)
-        return decodeSource(source)
+        val readable = if (bitmap.config == Bitmap.Config.HARDWARE) {
+            bitmap.copy(Bitmap.Config.ARGB_8888, false)
+        } else {
+            bitmap
+        } ?: return null
+
+        return try {
+            val luminance = readable.toLuminance() ?: return null
+            QrDecodeCore.decode(luminance, readable.width, readable.height)
+        } finally {
+            if (readable !== bitmap) readable.recycle()
+        }
     }
 
-    private fun decodeSource(source: LuminanceSource): String? {
-        val reader = MultiFormatReader().apply {
-            setHints(
-                mapOf(
-                    DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
-                    DecodeHintType.CHARACTER_SET to "UTF-8",
-                    DecodeHintType.TRY_HARDER to true,
-                    DecodeHintType.ALSO_INVERTED to true,
-                ),
-            )
-        }
+    private fun Bitmap.toLuminance(): ByteArray? {
+        val pixels = IntArray(width * height)
+        return try {
+            getPixels(pixels, 0, width, 0, 0, width, height)
+            val luminance = ByteArray(pixels.size)
+            for (index in pixels.indices) {
+                val color = pixels[index]
+                val alpha = color ushr 24
+                var red = (color shr 16) and 0xFF
+                var green = (color shr 8) and 0xFF
+                var blue = color and 0xFF
 
-        val binarizers = listOf(HybridBinarizer(source), GlobalHistogramBinarizer(source))
-        for (binarizer in binarizers) {
-            try {
-                return reader.decodeWithState(BinaryBitmap(binarizer)).text
-            } catch (_: NotFoundException) {
-                // Try the next binarizer.
-            } finally {
-                reader.reset()
+                // Transparent PNG backgrounds are commonly stored as black;
+                // composite them onto white before calculating luminance.
+                if (alpha != 0xFF) {
+                    val inverse = 255 - alpha
+                    red = (red * alpha + 255 * inverse + 127) / 255
+                    green = (green * alpha + 255 * inverse + 127) / 255
+                    blue = (blue * alpha + 255 * inverse + 127) / 255
+                }
+
+                luminance[index] = ((red * 77 + green * 150 + blue * 29) shr 8).toByte()
             }
+            luminance
+        } catch (_: Exception) {
+            null
         }
-        return null
     }
 }
