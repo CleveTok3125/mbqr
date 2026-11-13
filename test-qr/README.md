@@ -35,5 +35,33 @@ Check that long-press on each parsed field copies its value. On
 `01-vietqr-valid.png`, long-press `Số tiền` and confirm the clipboard contains
 `10000`, not `10.000 ₫`.
 
+## Hard still-image cases
+
+These fixtures are synthetic and intentionally harder to detect. They exercise
+the native ZXing-C++ fallback used for imported, captured, and shared images.
+Live camera results may differ.
+
+| File | Content | Expected result |
+| --- | --- | --- |
+| [`hard/01-perspective.png`](hard/01-perspective.png) | `MBQR hard 01` | Raw sheet |
+| [`hard/02-low-contrast.png`](hard/02-low-contrast.png) | `MBQR hard 02` | Raw sheet |
+| [`hard/03-blur-noise.png`](hard/03-blur-noise.png) | `MBQR hard 03` | Raw sheet |
+| [`hard/04-tight-crop.png`](hard/04-tight-crop.png) | `MBQR hard 04` | Raw sheet |
+| [`hard/05-inverted.png`](hard/05-inverted.png) | `MBQR hard 05` | Raw sheet |
+| [`hard/06-damaged.png`](hard/06-damaged.png) | `MBQR hard 06` | Raw sheet |
+| [`hard/07-small-in-page.png`](hard/07-small-in-page.png) | `MBQR hard 07` | Raw sheet |
+| [`hard/08-wobbly.png`](hard/08-wobbly.png) | `MBQR hard 08` | Raw sheet; Java ZXing fails, native fallback must decode |
+| [`hard/09-url-perspective.png`](hard/09-url-perspective.png) | HTTPS URL | Link sheet with `Mở liên kết` |
+| [`hard/10-dots.png`](hard/10-dots.png) | `MBQR hard 10 dots` | Raw sheet; dot-style modules |
+| [`hard/11-logo-center.png`](hard/11-logo-center.png) | `MBQR hard 11 logo center` | Raw sheet; centered logo |
+| [`hard/12-logo-part.png`](hard/12-logo-part.png) | `MBQR hard 12 logo part` | Raw sheet; Java ZXing fails, native fallback must decode |
+| [`hard/13-curved.png`](hard/13-curved.png) | `MBQR hard 13 curved` | Raw sheet; curved/shaded surface; Java ZXing fails |
+| [`hard/14-high-density.png`](hard/14-high-density.png) | Long text payload | Raw sheet; dense QR on a tilted page |
+| [`hard/15-very-low-contrast.png`](hard/15-very-low-contrast.png) | `MBQR hard 15 low contrast` | Raw sheet; gradient illumination |
+| [`hard/16-line-horizontal.png`](hard/16-line-horizontal.png) | `MBQR hard 16 line horizontal` | Raw sheet; horizontal line style |
+| [`hard/17-line-vertical.png`](hard/17-line-vertical.png) | `MBQR hard 17 line vertical` | Raw sheet; vertical line style |
+| [`hard/18-finder-styles.png`](hard/18-finder-styles.png) | `MBQR hard 18 finder styles` | Raw sheet; rounded, circle, and diamond finder patterns |
+| [`hard/19-alpha-colorful.png`](hard/19-alpha-colorful.png) | `MBQR hard 19 alpha overlay` | Raw sheet; QR under a semi-transparent multicolor overlay |
+
 Automated parser tests use the same payloads. Update both when changing a
 fixture.
