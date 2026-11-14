@@ -42,6 +42,7 @@ secrets/
 .git-credentials
 
 # Local environment files
+.venv/
 .bash_profile
 .bashrc
 .gitconfig
