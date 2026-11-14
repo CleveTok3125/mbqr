@@ -139,7 +139,8 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 - **Clipboard pill**: tap to copy again and restart the timer; long-press to
   clear.
 - Rows that differ from the factory value expose **Mặc định**. The overflow menu
-  holds **Thông tin** and **Khôi phục mặc định**.
+  holds **Thu gọn tất cả**, **Mở rộng tất cả**, **Thông tin**, and **Khôi phục
+  mặc định**.
 
 ## Behavior
 

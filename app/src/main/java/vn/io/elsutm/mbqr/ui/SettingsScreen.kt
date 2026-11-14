@@ -144,6 +144,15 @@ internal fun SettingsScreen(
     var privacySectionExpanded by rememberSaveable { mutableStateOf(true) }
     var advancedSectionExpanded by rememberSaveable { mutableStateOf(false) }
 
+    fun setAllSectionsExpanded(expanded: Boolean) {
+        appearanceSectionExpanded = expanded
+        scanSectionExpanded = expanded
+        interactionSectionExpanded = expanded
+        integrationSectionExpanded = expanded
+        privacySectionExpanded = expanded
+        advancedSectionExpanded = expanded
+    }
+
     BackHandler(onBack = onClose)
     SettingsStatusBarAppearance()
 
@@ -180,6 +189,20 @@ internal fun SettingsScreen(
                                 onClick = {
                                     menuExpanded = false
                                     onOpenCredits()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Thu gọn tất cả") },
+                                onClick = {
+                                    menuExpanded = false
+                                    setAllSectionsExpanded(false)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Mở rộng tất cả") },
+                                onClick = {
+                                    menuExpanded = false
+                                    setAllSectionsExpanded(true)
                                 },
                             )
                             DropdownMenuItem(
