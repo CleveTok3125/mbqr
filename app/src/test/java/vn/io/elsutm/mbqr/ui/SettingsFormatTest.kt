@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import vn.io.elsutm.mbqr.settings.AnalysisResolutionPreset
 import vn.io.elsutm.mbqr.settings.AnalysisSize
+import vn.io.elsutm.mbqr.settings.ScanBoundaryStyle
+import vn.io.elsutm.mbqr.settings.ScanFrameStyle
 
 class SettingsFormatTest {
 
@@ -42,6 +44,19 @@ class SettingsFormatTest {
                 AnalysisSize(1080, 1920),
             ),
         )
+    }
+
+    @Test
+    fun `labels the scan frame styles`() {
+        assertEquals("Bo góc", ScanFrameStyle.ROUNDED.label())
+        assertEquals("Góc", ScanFrameStyle.CORNERS.label())
+        assertEquals("Vuông", ScanFrameStyle.SQUARE.label())
+    }
+
+    @Test
+    fun `labels the scan boundary styles`() {
+        assertEquals("Bo góc", ScanBoundaryStyle.ROUNDED.label())
+        assertEquals("Vuông", ScanBoundaryStyle.SQUARE.label())
     }
 
     @Test

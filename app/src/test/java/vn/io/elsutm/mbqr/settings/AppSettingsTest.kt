@@ -99,6 +99,21 @@ class AppSettingsTest {
     }
 
     @Test
+    fun `maps scan frame style names with a rounded fallback`() {
+        assertEquals(ScanFrameStyle.ROUNDED, ScanFrameStyle.fromName(null))
+        assertEquals(ScanFrameStyle.ROUNDED, ScanFrameStyle.fromName("UNKNOWN"))
+        assertEquals(ScanFrameStyle.CORNERS, ScanFrameStyle.fromName("CORNERS"))
+        assertEquals(ScanFrameStyle.SQUARE, ScanFrameStyle.fromName("SQUARE"))
+    }
+
+    @Test
+    fun `maps scan boundary style names with a rounded fallback`() {
+        assertEquals(ScanBoundaryStyle.ROUNDED, ScanBoundaryStyle.fromName(null))
+        assertEquals(ScanBoundaryStyle.ROUNDED, ScanBoundaryStyle.fromName("UNKNOWN"))
+        assertEquals(ScanBoundaryStyle.SQUARE, ScanBoundaryStyle.fromName("SQUARE"))
+    }
+
+    @Test
     fun `clamps masking level to the supported range`() {
         assertEquals(AppSettings.MASKING_OFF, AppSettings.boundedMaskingLevel(-1))
         assertEquals(AppSettings.MASKING_OFF, AppSettings.boundedMaskingLevel(0))
@@ -122,6 +137,9 @@ class AppSettingsTest {
         assertEquals(true, defaults.sanitizeResults)
         assertEquals(AnalysisResolutionPreset.P720, defaults.analysisResolutionPreset)
         assertEquals(AnalysisFpsPreset.FPS_24, defaults.analysisFpsPreset)
+        assertEquals(true, defaults.hapticsEnabled)
+        assertEquals(ScanFrameStyle.ROUNDED, defaults.scanFrameStyle)
+        assertEquals(ScanBoundaryStyle.ROUNDED, defaults.scanBoundaryStyle)
     }
 
     @Test

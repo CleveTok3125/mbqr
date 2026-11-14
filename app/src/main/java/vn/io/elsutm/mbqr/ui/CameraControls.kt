@@ -44,6 +44,7 @@ fun CameraControls(
     maxZoom: Float,
     isCapturing: Boolean,
     showCapture: Boolean,
+    hapticsEnabled: Boolean,
     onZoomChange: (Float) -> Unit,
     onCapture: () -> Unit,
     modifier: Modifier = Modifier,
@@ -61,6 +62,7 @@ fun CameraControls(
             zoomRatio = zoomRatio,
             minZoom = minZoom,
             maxZoom = maxZoom,
+            hapticsEnabled = hapticsEnabled,
             onZoomChange = onZoomChange,
         )
 
@@ -68,6 +70,7 @@ fun CameraControls(
             ShutterButton(
                 modifier = Modifier.padding(bottom = 8.dp),
                 isCapturing = isCapturing,
+                hapticsEnabled = hapticsEnabled,
                 onCapture = onCapture,
             )
         }
@@ -77,6 +80,7 @@ fun CameraControls(
 @Composable
 private fun ShutterButton(
     isCapturing: Boolean,
+    hapticsEnabled: Boolean,
     onCapture: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -88,7 +92,7 @@ private fun ShutterButton(
             .border(4.dp, Color.White, CircleShape)
             .background(Color.White.copy(alpha = 0.18f))
             .clickable(enabled = !isCapturing) {
-                view.performHapticFeedback(HAPTIC_MAJOR)
+                if (hapticsEnabled) view.performHapticFeedback(HAPTIC_MAJOR)
                 onCapture()
             },
         contentAlignment = Alignment.Center,
@@ -115,6 +119,7 @@ private fun ZoomDial(
     zoomRatio: Float,
     minZoom: Float,
     maxZoom: Float,
+    hapticsEnabled: Boolean,
     onZoomChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -152,7 +157,9 @@ private fun ZoomDial(
                         if (downAngle in arcStart..arcEnd) {
                             lastAngle = downAngle
                         }
-                        view.performHapticFeedback(HAPTIC_MAJOR)
+                        if (hapticsEnabled) {
+                            view.performHapticFeedback(HAPTIC_MAJOR)
+                        }
                         onZoomChange(downRatio)
                         var previousRatio = downRatio
 
@@ -166,7 +173,9 @@ private fun ZoomDial(
                                 // Gaps beside the arc clamp the thumb but still
                                 // report the boundary when the clamp changes it.
                                 if (crossedEndpoint(previousRatio, ratio, minZoom, maxZoom)) {
-                                    view.performHapticFeedback(HAPTIC_MAJOR)
+                                    if (hapticsEnabled) {
+                                        view.performHapticFeedback(HAPTIC_MAJOR)
+                                    }
                                 }
                                 lastAngle = null
                                 previousRatio = ratio
@@ -185,10 +194,12 @@ private fun ZoomDial(
                             }
 
                             if (crossedEndpoint(previousRatio, ratio, minZoom, maxZoom)) {
-                                view.performHapticFeedback(HAPTIC_MAJOR)
+                                if (hapticsEnabled) {
+                                    view.performHapticFeedback(HAPTIC_MAJOR)
+                                }
                             } else {
                                 val crossed = strongestCrossedTick(previous, angle, ticks)
-                                if (crossed != null) {
+                                if (crossed != null && hapticsEnabled) {
                                     view.performHapticFeedback(
                                         if (crossed.major) HAPTIC_MAJOR else HAPTIC_MINOR,
                                     )

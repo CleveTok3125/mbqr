@@ -19,7 +19,6 @@ import androidx.camera.core.ImageProxy
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -129,6 +128,8 @@ import vn.io.elsutm.mbqr.settings.AnalysisResolutionPreset
 import vn.io.elsutm.mbqr.settings.AnalysisSize
 import vn.io.elsutm.mbqr.settings.AppSettings
 import vn.io.elsutm.mbqr.settings.QrDecodePreset
+import vn.io.elsutm.mbqr.settings.ScanBoundaryStyle
+import vn.io.elsutm.mbqr.settings.ScanFrameStyle
 import vn.io.elsutm.mbqr.vietqr.BankDirectory
 import vn.io.elsutm.mbqr.vietqr.TransferBuilder
 import vn.io.elsutm.mbqr.vietqr.VietQrData
@@ -205,6 +206,9 @@ fun ScannerScreen(
     }
     var advancedCopyEnabled by remember { mutableStateOf(AppSettings.advancedCopyEnabled(context)) }
     var sanitizeResults by remember { mutableStateOf(AppSettings.sanitizeResults(context)) }
+    var hapticsEnabled by remember { mutableStateOf(AppSettings.hapticsEnabled(context)) }
+    var scanFrameStyle by remember { mutableStateOf(AppSettings.scanFrameStyle(context)) }
+    var scanBoundaryStyle by remember { mutableStateOf(AppSettings.scanBoundaryStyle(context)) }
     var analysisFpsPreset by remember {
         mutableStateOf(AppSettings.analysisFpsPreset(context))
     }
@@ -351,20 +355,24 @@ fun ScannerScreen(
         }
     }
 
+    fun haptic(type: Int = HapticFeedbackConstants.CLOCK_TICK) {
+        if (hapticsEnabled) view.performHapticFeedback(type)
+    }
+
     fun copyField(text: String) {
         if (demoMode) {
             Toast.makeText(context, "Đang trong chế độ demo", Toast.LENGTH_SHORT).show()
             return
         }
         copyToClipboard(text)
-        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        haptic()
         Toast.makeText(context, "Đã copy", Toast.LENGTH_SHORT).show()
     }
 
     fun restoreClipboard() {
         val text = ClipboardSession.text ?: lastClipboardText ?: return
         copyToClipboard(text)
-        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        haptic()
         Toast.makeText(context, "Đã copy lại", Toast.LENGTH_SHORT).show()
     }
 
@@ -395,7 +403,7 @@ fun ScannerScreen(
         clipboardExpiresAt = 0L
         clipboardRemaining = 0
         context.stopService(Intent(context, ClipboardExpiryService::class.java))
-        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        haptic()
         Toast.makeText(context, "Đã xoá clipboard", Toast.LENGTH_SHORT).show()
     }
 
@@ -440,6 +448,18 @@ fun ScannerScreen(
                 sanitizeResults = change.value
                 AppSettings.setSanitizeResults(context, change.value)
             }
+            is SettingsChange.HapticsEnabled -> {
+                hapticsEnabled = change.value
+                AppSettings.setHapticsEnabled(context, change.value)
+            }
+            is SettingsChange.FrameStyle -> {
+                scanFrameStyle = change.value
+                AppSettings.setScanFrameStyle(context, change.value)
+            }
+            is SettingsChange.BoundaryStyle -> {
+                scanBoundaryStyle = change.value
+                AppSettings.setScanBoundaryStyle(context, change.value)
+            }
             is SettingsChange.ResolutionPreset -> {
                 analysisResolutionPreset = change.value
                 AppSettings.setAnalysisResolutionPreset(context, change.value)
@@ -466,6 +486,9 @@ fun ScannerScreen(
             SettingsChange.PipelineStatusEnabled(defaults.pipelineStatusEnabled),
             SettingsChange.AdvancedCopyEnabled(defaults.advancedCopyEnabled),
             SettingsChange.SanitizeResults(defaults.sanitizeResults),
+            SettingsChange.HapticsEnabled(defaults.hapticsEnabled),
+            SettingsChange.FrameStyle(defaults.scanFrameStyle),
+            SettingsChange.BoundaryStyle(defaults.scanBoundaryStyle),
             SettingsChange.ResolutionPreset(defaults.analysisResolutionPreset),
             SettingsChange.FpsPreset(defaults.analysisFpsPreset),
         ).forEach { change -> applySettingsChange(change) }
@@ -568,7 +591,7 @@ fun ScannerScreen(
         resetHandoff()
 
         // Any decoded QR is a scan success: either a sheet or the MB handoff follows.
-        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        haptic()
 
         when (val content = QrContentParser.parse(raw, sanitizeResults)) {
             is QrContent.VietQr -> {
@@ -895,9 +918,7 @@ fun ScannerScreen(
                                         } else {
                                             0
                                         }
-                                        view.performHapticFeedback(
-                                            HapticFeedbackConstants.CLOCK_TICK,
-                                        )
+                                        haptic()
                                     }
                                 }
                                 lastClipboardText != null -> {
@@ -912,6 +933,8 @@ fun ScannerScreen(
                             },
                             frameSize = frameSize,
                             frameOffsetY = -maxHeight * 0.05f,
+                            frameStyle = scanFrameStyle,
+                            boundaryStyle = scanBoundaryStyle,
                             scanCrop = scanCrop,
                             showTorch = true,
                             showImage = true,
@@ -945,6 +968,7 @@ fun ScannerScreen(
                                 maxZoom = dialMax,
                                 isCapturing = isCapturing,
                                 showCapture = if (demoMode) true else imageCapture != null,
+                                hapticsEnabled = hapticsEnabled,
                                 onZoomChange = { ratio ->
                                     zoomRatio = ratio
                                     if (!demoMode) {
@@ -977,6 +1001,9 @@ fun ScannerScreen(
                         pipelineStatusEnabled = pipelineStatusEnabled,
                         advancedCopyEnabled = advancedCopyEnabled,
                         sanitizeResults = sanitizeResults,
+                        hapticsEnabled = hapticsEnabled,
+                        scanFrameStyle = scanFrameStyle,
+                        scanBoundaryStyle = scanBoundaryStyle,
                         analysisResolutionPreset = analysisResolutionPreset,
                         customAnalysisSize = customAnalysisSize,
                         analysisFpsPreset = analysisFpsPreset,
@@ -1892,6 +1919,8 @@ private fun ScannerOverlay(
     onClearClipboard: (() -> Unit)?,
     frameSize: Dp,
     frameOffsetY: Dp,
+    frameStyle: ScanFrameStyle,
+    boundaryStyle: ScanBoundaryStyle,
     scanCrop: ScanCrop?,
     showTorch: Boolean,
     showImage: Boolean,
@@ -1908,6 +1937,15 @@ private fun ScannerOverlay(
     val scanBoundaryColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
 
     Box(modifier = Modifier.fillMaxSize()) {
+        ScanFrameOutline(
+            style = frameStyle,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(y = frameOffsetY)
+                .size(frameSize),
+        )
+
         scanCrop?.let { crop ->
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val left = crop.left * size.width
@@ -1919,11 +1957,14 @@ private fun ScannerOverlay(
                         color = scanBoundaryColor,
                         topLeft = Offset(left, top),
                         size = Size(right - left, bottom - top),
-                        cornerRadius = CornerRadius(32.dp.toPx()),
+                        cornerRadius = CornerRadius(scanFrameBoundaryRadius(boundaryStyle).toPx()),
                         style = Stroke(
-                            width = 1.dp.toPx(),
+                            width = ScanBoundaryStrokeWidth.toPx(),
                             pathEffect = PathEffect.dashPathEffect(
-                                intervals = floatArrayOf(8.dp.toPx(), 6.dp.toPx()),
+                                intervals = floatArrayOf(
+                                    ScanBoundaryDashOn.toPx(),
+                                    ScanBoundaryDashOff.toPx(),
+                                ),
                             ),
                         ),
                     )
@@ -2055,18 +2096,6 @@ private fun ScannerOverlay(
                 }
             }
         }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .offset(y = frameOffsetY)
-                .size(frameSize)
-                .border(
-                    width = 3.dp,
-                    color = MaterialTheme.colorScheme.primary,
-                    shape = RoundedCornerShape(28.dp),
-                ),
-        )
 
     }
 }

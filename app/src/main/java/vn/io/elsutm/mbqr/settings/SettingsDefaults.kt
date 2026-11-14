@@ -12,6 +12,9 @@ data class SettingsDefaults(
     val pipelineStatusEnabled: Boolean,
     val advancedCopyEnabled: Boolean,
     val sanitizeResults: Boolean,
+    val hapticsEnabled: Boolean,
+    val scanFrameStyle: ScanFrameStyle,
+    val scanBoundaryStyle: ScanBoundaryStyle,
     val analysisResolutionPreset: AnalysisResolutionPreset,
     val analysisFpsPreset: AnalysisFpsPreset,
 )

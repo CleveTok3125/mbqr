@@ -113,13 +113,18 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 
 ## Controls
 
-- **Cài đặt**: full-screen screen with four groups: Quét, Chuyển khoản,
-  Riêng tư, Nâng cao. Each group collapses by tapping its header; Nâng cao
-  starts collapsed. Masking level (default off) with a live field preview;
-  confirmation for opening MB Bank; scan-inside-frame with margin `0–100%`
-  (default `50`) and a frame preview; clipboard expiry `0` = off, otherwise
-  `15–300s` in 15s steps (default `60`). Rows that differ from
-  the factory value expose a **Mặc định** action. The overflow menu holds
+- **Cài đặt**: full-screen screen with six groups, ordered by how often they
+  change: Giao diện, Quét, Tương tác, Tích hợp, Riêng tư, Nâng cao. Each group
+  collapses by tapping its header; Nâng cao starts collapsed. **Giao diện** shows
+  one shared preview for the frame and margin, then sets the frame outline
+  (`Bo góc` default, `Góc`, `Vuông`), the scan margin `0–100%` (default `50`),
+  and its outline (`Bo góc` default, `Vuông`). Margin controls are disabled
+  until **Chỉ quét trong khung** is on.
+  **Quét** holds that toggle. **Tương tác** has **Rung** (default on).
+  **Tích hợp** holds the confirmation for opening MB Bank. **Riêng tư** has
+  masking (default off) with a live field preview and clipboard expiry (`0` =
+  off, otherwise `15–300s` in 15s steps, default `60`). Rows that differ from the
+  factory value expose a **Mặc định** action. The overflow menu holds
   **Thông tin** (credits, version, source, license) and **Khôi phục mặc định**.
 - **Nâng cao**: **Lọc ký tự không an toàn** (default on) cleans displayed and
   copied values; **Bật copy nâng cao** (default off) adds **Hex** and
@@ -142,7 +147,8 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
   while a decode pipeline runs.
 - **Đèn / Ảnh**: torch; scan a gallery image or one image shared from another app.
 - **Arc dial**: zoom `1x` to camera max; ticks at powers of two, minor ticks per
-  interval, final tail clipped at max; haptics at ticks and endpoints.
+  interval, final tail clipped at max; haptics at ticks and endpoints when
+  **Rung** is on.
 - **Shutter**: full-resolution capture.
 - **Clipboard pill**: tap to copy again and restart the timer when enabled;
   long-press to clear.
@@ -154,6 +160,10 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 - **Chỉ quét QR trong khung** is off by default. When on, live camera frames are
   cropped to the frame plus the configured margin. Shutter, gallery, and shared
   images scan the full image.
+- **Kiểu khung** and **Kiểu lề** change only the outlines. The crop region,
+  margin, and decoded area stay the same.
+- **Rung** covers the zoom dial, the shutter button, and clipboard copy, restore,
+  and clear actions.
 - Shared images use the sender's URI once; no gallery or storage permission is
   requested.
 - The merchant-name field is appended only when present; MB resolves the

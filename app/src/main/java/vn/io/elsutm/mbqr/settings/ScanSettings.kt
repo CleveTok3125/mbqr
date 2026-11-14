@@ -38,3 +38,28 @@ data class AnalysisSize(
 ) {
     override fun toString(): String = "${width}×$height"
 }
+
+/** Outline drawn around the scan frame. */
+enum class ScanFrameStyle {
+    ROUNDED,
+    CORNERS,
+    SQUARE,
+    ;
+
+    companion object {
+        fun fromName(value: String?): ScanFrameStyle =
+            entries.firstOrNull { it.name == value } ?: ROUNDED
+    }
+}
+
+/** Outline drawn around the crop boundary. */
+enum class ScanBoundaryStyle {
+    ROUNDED,
+    SQUARE,
+    ;
+
+    companion object {
+        fun fromName(value: String?): ScanBoundaryStyle =
+            entries.firstOrNull { it.name == value } ?: ROUNDED
+    }
+}

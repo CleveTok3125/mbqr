@@ -1,7 +1,8 @@
 package vn.io.elsutm.mbqr.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.border
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -51,6 +52,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -64,6 +70,8 @@ import vn.io.elsutm.mbqr.settings.AnalysisResolutionPreset
 import vn.io.elsutm.mbqr.settings.AnalysisSize
 import vn.io.elsutm.mbqr.settings.AppSettings
 import vn.io.elsutm.mbqr.settings.QrDecodePreset
+import vn.io.elsutm.mbqr.settings.ScanBoundaryStyle
+import vn.io.elsutm.mbqr.settings.ScanFrameStyle
 import vn.io.elsutm.mbqr.settings.SettingsDefaults
 
 /** Current settings values rendered by [SettingsScreen]. */
@@ -78,6 +86,9 @@ internal data class SettingsSnapshot(
     val pipelineStatusEnabled: Boolean,
     val advancedCopyEnabled: Boolean,
     val sanitizeResults: Boolean,
+    val hapticsEnabled: Boolean,
+    val scanFrameStyle: ScanFrameStyle,
+    val scanBoundaryStyle: ScanBoundaryStyle,
     val analysisResolutionPreset: AnalysisResolutionPreset,
     val customAnalysisSize: AnalysisSize,
     val analysisFpsPreset: AnalysisFpsPreset,
@@ -100,6 +111,9 @@ internal sealed interface SettingsChange {
     data class PipelineStatusEnabled(val value: Boolean) : SettingsChange
     data class AdvancedCopyEnabled(val value: Boolean) : SettingsChange
     data class SanitizeResults(val value: Boolean) : SettingsChange
+    data class HapticsEnabled(val value: Boolean) : SettingsChange
+    data class FrameStyle(val value: ScanFrameStyle) : SettingsChange
+    data class BoundaryStyle(val value: ScanBoundaryStyle) : SettingsChange
     data class ResolutionPreset(val value: AnalysisResolutionPreset) : SettingsChange
     data class FpsPreset(val value: AnalysisFpsPreset) : SettingsChange
 }
@@ -124,7 +138,9 @@ internal fun SettingsScreen(
     var liveExpanded by rememberSaveable { mutableStateOf(false) }
     var stillExpanded by rememberSaveable { mutableStateOf(false) }
     var scanSectionExpanded by rememberSaveable { mutableStateOf(true) }
-    var transferSectionExpanded by rememberSaveable { mutableStateOf(true) }
+    var appearanceSectionExpanded by rememberSaveable { mutableStateOf(true) }
+    var interactionSectionExpanded by rememberSaveable { mutableStateOf(true) }
+    var integrationSectionExpanded by rememberSaveable { mutableStateOf(true) }
     var privacySectionExpanded by rememberSaveable { mutableStateOf(true) }
     var advancedSectionExpanded by rememberSaveable { mutableStateOf(false) }
 
@@ -189,7 +205,75 @@ internal fun SettingsScreen(
                     .padding(top = 4.dp, bottom = 32.dp),
             ) {
                 SettingsSection(
+                    title = "Giao diện",
+                    icon = R.drawable.ic_palette,
+                    showTopDivider = false,
+                    expanded = appearanceSectionExpanded,
+                    onExpandChange = { appearanceSectionExpanded = it },
+                ) {
+                    ScanAppearancePreview(
+                        frameStyle = values.scanFrameStyle,
+                        boundaryStyle = values.scanBoundaryStyle,
+                        marginPercent = values.scanFrameMarginPercent,
+                        marginEnabled = values.scanInsideFrame,
+                    )
+                    ChoiceSetting(
+                        title = "Kiểu khung",
+                        options = ScanFrameStyle.entries,
+                        selected = values.scanFrameStyle,
+                        label = { it.label() },
+                        resetVisible = values.scanFrameStyle != defaults.scanFrameStyle,
+                        onReset = {
+                            onValueChange(
+                                SettingsChange.FrameStyle(defaults.scanFrameStyle),
+                            )
+                        },
+                        onSelect = {
+                            onValueChange(SettingsChange.FrameStyle(it))
+                        },
+                    )
+                    ScanFrameMarginSetting(
+                        percent = values.scanFrameMarginPercent,
+                        enabled = values.scanInsideFrame,
+                        resetVisible = values.scanInsideFrame &&
+                            values.scanFrameMarginPercent != defaults.scanFrameMarginPercent,
+                        onReset = {
+                            onValueChange(
+                                SettingsChange.ScanFrameMarginPercent(
+                                    defaults.scanFrameMarginPercent,
+                                ),
+                            )
+                            onValueChange(SettingsChange.CommitScanFrameMargin)
+                        },
+                        onPercentChange = {
+                            onValueChange(SettingsChange.ScanFrameMarginPercent(it))
+                        },
+                        onPercentChangeFinished = {
+                            onValueChange(SettingsChange.CommitScanFrameMargin)
+                        },
+                    )
+                    ChoiceSetting(
+                        title = "Kiểu lề",
+                        options = ScanBoundaryStyle.entries,
+                        selected = values.scanBoundaryStyle,
+                        label = { it.label() },
+                        enabled = values.scanInsideFrame,
+                        resetVisible = values.scanInsideFrame &&
+                            values.scanBoundaryStyle != defaults.scanBoundaryStyle,
+                        onReset = {
+                            onValueChange(
+                                SettingsChange.BoundaryStyle(defaults.scanBoundaryStyle),
+                            )
+                        },
+                        onSelect = {
+                            onValueChange(SettingsChange.BoundaryStyle(it))
+                        },
+                    )
+                }
+
+                SettingsSection(
                     title = "Quét",
+                    icon = R.drawable.ic_qr_code_scanner,
                     expanded = scanSectionExpanded,
                     onExpandChange = { scanSectionExpanded = it },
                 ) {
@@ -206,33 +290,34 @@ internal fun SettingsScreen(
                             onValueChange(SettingsChange.ScanInsideFrame(it))
                         },
                     )
-                    SettingsDivider()
-                    ScanFrameMarginSetting(
-                        percent = values.scanFrameMarginPercent,
-                        enabled = values.scanInsideFrame,
-                        resetVisible = values.scanFrameMarginPercent !=
-                            defaults.scanFrameMarginPercent,
+                }
+
+                SettingsSection(
+                    title = "Tương tác",
+                    icon = R.drawable.ic_touch_app,
+                    expanded = interactionSectionExpanded,
+                    onExpandChange = { interactionSectionExpanded = it },
+                ) {
+                    ToggleSetting(
+                        title = "Rung",
+                        checked = values.hapticsEnabled,
+                        resetVisible = values.hapticsEnabled != defaults.hapticsEnabled,
                         onReset = {
                             onValueChange(
-                                SettingsChange.ScanFrameMarginPercent(
-                                    defaults.scanFrameMarginPercent,
-                                ),
+                                SettingsChange.HapticsEnabled(defaults.hapticsEnabled),
                             )
-                            onValueChange(SettingsChange.CommitScanFrameMargin)
                         },
-                        onPercentChange = {
-                            onValueChange(SettingsChange.ScanFrameMarginPercent(it))
-                        },
-                        onPercentChangeFinished = {
-                            onValueChange(SettingsChange.CommitScanFrameMargin)
+                        onCheckedChange = {
+                            onValueChange(SettingsChange.HapticsEnabled(it))
                         },
                     )
                 }
 
                 SettingsSection(
-                    title = "Chuyển khoản",
-                    expanded = transferSectionExpanded,
-                    onExpandChange = { transferSectionExpanded = it },
+                    title = "Tích hợp",
+                    icon = R.drawable.ic_link,
+                    expanded = integrationSectionExpanded,
+                    onExpandChange = { integrationSectionExpanded = it },
                 ) {
                     ToggleSetting(
                         title = "Hỏi trước khi mở MB Bank",
@@ -250,30 +335,11 @@ internal fun SettingsScreen(
                             onValueChange(SettingsChange.ConfirmBeforeOpeningMb(it))
                         },
                     )
-                    SettingsDivider()
-                    ClipboardExpirySetting(
-                        seconds = values.clipboardExpirySeconds,
-                        resetVisible = values.clipboardExpirySeconds !=
-                            defaults.clipboardExpirySeconds,
-                        onReset = {
-                            onValueChange(
-                                SettingsChange.ClipboardExpirySeconds(
-                                    defaults.clipboardExpirySeconds,
-                                ),
-                            )
-                            onValueChange(SettingsChange.CommitClipboardExpiry)
-                        },
-                        onSecondsChange = {
-                            onValueChange(SettingsChange.ClipboardExpirySeconds(it))
-                        },
-                        onSecondsChangeFinished = {
-                            onValueChange(SettingsChange.CommitClipboardExpiry)
-                        },
-                    )
                 }
 
                 SettingsSection(
                     title = "Riêng tư",
+                    icon = R.drawable.ic_shield,
                     expanded = privacySectionExpanded,
                     onExpandChange = { privacySectionExpanded = it },
                 ) {
@@ -306,10 +372,30 @@ internal fun SettingsScreen(
                         },
                     )
                     MaskingPreview(level = values.sensitiveMaskingLevel)
+                    ClipboardExpirySetting(
+                        seconds = values.clipboardExpirySeconds,
+                        resetVisible = values.clipboardExpirySeconds !=
+                            defaults.clipboardExpirySeconds,
+                        onReset = {
+                            onValueChange(
+                                SettingsChange.ClipboardExpirySeconds(
+                                    defaults.clipboardExpirySeconds,
+                                ),
+                            )
+                            onValueChange(SettingsChange.CommitClipboardExpiry)
+                        },
+                        onSecondsChange = {
+                            onValueChange(SettingsChange.ClipboardExpirySeconds(it))
+                        },
+                        onSecondsChangeFinished = {
+                            onValueChange(SettingsChange.CommitClipboardExpiry)
+                        },
+                    )
                 }
 
                 SettingsSection(
                     title = "Nâng cao",
+                    icon = R.drawable.ic_tune,
                     expanded = advancedSectionExpanded,
                     onExpandChange = { advancedSectionExpanded = it },
                 ) {
@@ -326,7 +412,6 @@ internal fun SettingsScreen(
                             onValueChange(SettingsChange.SanitizeResults(it))
                         },
                     )
-                    SettingsDivider()
                     ToggleSetting(
                         title = "Bật copy nâng cao",
                         checked = values.advancedCopyEnabled,
@@ -343,7 +428,6 @@ internal fun SettingsScreen(
                             onValueChange(SettingsChange.AdvancedCopyEnabled(it))
                         },
                     )
-                    SettingsDivider()
                     ToggleSetting(
                         title = "Hiện thông tin xử lý",
                         checked = values.pipelineStatusEnabled,
@@ -360,7 +444,6 @@ internal fun SettingsScreen(
                             onValueChange(SettingsChange.PipelineStatusEnabled(it))
                         },
                     )
-                    SettingsDivider()
                     ExpandableSetting(
                         title = "Quét trực tiếp",
                         summary = liveSummary(
@@ -422,7 +505,6 @@ internal fun SettingsScreen(
                             onCustomClick = onEditCustomFps,
                         )
                     }
-                    SettingsDivider()
                     ExpandableSetting(
                         title = "Quét ảnh",
                         summary = values.stillDecodePreset.label(),
@@ -500,11 +582,17 @@ private fun SettingsStatusBarAppearance() {
 @Composable
 private fun SettingsSection(
     title: String,
+    @DrawableRes icon: Int,
     expanded: Boolean,
     onExpandChange: (Boolean) -> Unit,
+    showTopDivider: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(modifier = Modifier.padding(top = 16.dp)) {
+        if (showTopDivider) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(modifier = Modifier.height(8.dp))
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -519,6 +607,12 @@ private fun SettingsSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelLarge,
@@ -539,11 +633,6 @@ private fun SettingsSection(
             content()
         }
     }
-}
-
-@Composable
-private fun SettingsDivider() {
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
@@ -639,6 +728,7 @@ private fun <T> ChoiceSetting(
     resetVisible: Boolean,
     onReset: () -> Unit,
     onSelect: (T) -> Unit,
+    enabled: Boolean = true,
 ) {
     Column(
         modifier = Modifier
@@ -657,6 +747,7 @@ private fun <T> ChoiceSetting(
                     SegmentedButton(
                         selected = option == selected,
                         onClick = { onSelect(option) },
+                        enabled = enabled,
                         shape = SegmentedButtonDefaults.itemShape(
                             index = index,
                             count = options.size,
@@ -838,31 +929,22 @@ private fun ScanFrameMarginSetting(
             resetVisible = resetVisible,
             onReset = onReset,
         )
+        Slider(
+            value = percent.toFloat(),
+            onValueChange = { value ->
+                onPercentChange(AppSettings.snappedScanFrameMarginPercent(value))
+            },
+            onValueChangeFinished = onPercentChangeFinished,
+            valueRange = 0f..maxPercent.toFloat(),
+            steps = maxPercent / stepPercent - 1,
+            enabled = enabled,
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            ScanFramePreview(percent = percent, enabled = enabled)
-            Column(modifier = Modifier.weight(1f)) {
-                Slider(
-                    value = percent.toFloat(),
-                    onValueChange = { value ->
-                        onPercentChange(AppSettings.snappedScanFrameMarginPercent(value))
-                    },
-                    onValueChangeFinished = onPercentChangeFinished,
-                    valueRange = 0f..maxPercent.toFloat(),
-                    steps = maxPercent / stepPercent - 1,
-                    enabled = enabled,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    EndpointLabel("Sát khung")
-                    EndpointLabel("Rộng")
-                }
-            }
+            EndpointLabel("Sát khung")
+            EndpointLabel("Rộng")
         }
         if (!enabled) {
             Text(
@@ -875,35 +957,59 @@ private fun ScanFrameMarginSetting(
 }
 
 @Composable
-private fun ScanFramePreview(
-    percent: Int,
-    enabled: Boolean,
+private fun ScanAppearancePreview(
+    frameStyle: ScanFrameStyle,
+    boundaryStyle: ScanBoundaryStyle,
+    marginPercent: Int,
+    marginEnabled: Boolean,
 ) {
-    val emphasis = if (enabled) 1f else 0.38f
-    val extra = 14.dp * (percent / AppSettings.MAX_SCAN_FRAME_MARGIN_PERCENT.toFloat())
+    val color = MaterialTheme.colorScheme.primary
+    val extra = scanMargin(minGap = 12.dp, percent = marginPercent)
 
     Box(
-        modifier = Modifier.size(64.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Box(
-            modifier = Modifier
-                .size(36.dp + extra * 2)
-                .border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f * emphasis),
-                    shape = RoundedCornerShape(10.dp),
-                ),
-        )
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .border(
-                    width = 2.dp,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = emphasis),
-                    shape = RoundedCornerShape(6.dp),
-                ),
-        )
+            modifier = Modifier.size(72.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            ScanFrameOutline(
+                style = frameStyle,
+                color = color,
+                modifier = Modifier.size(40.dp),
+            )
+            if (marginEnabled) {
+                val outerRadius = if (boundaryStyle == ScanBoundaryStyle.SQUARE) {
+                    0.dp
+                } else {
+                    8.dp
+                }
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val center = Offset(size.width / 2f, size.height / 2f)
+                    val outer = (40.dp + extra * 2).toPx()
+                        .coerceAtMost(size.minDimension - ScanBoundaryStrokeWidth.toPx())
+
+                    drawRoundRect(
+                        color = color.copy(alpha = 0.5f),
+                        topLeft = Offset(center.x - outer / 2f, center.y - outer / 2f),
+                        size = Size(outer, outer),
+                        cornerRadius = CornerRadius(outerRadius.toPx()),
+                        style = Stroke(
+                            width = ScanBoundaryStrokeWidth.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(
+                                intervals = floatArrayOf(
+                                    ScanBoundaryDashOn.toPx(),
+                                    ScanBoundaryDashOff.toPx(),
+                                ),
+                            ),
+                        ),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1064,6 +1170,17 @@ private fun MaskingSampleRow(
 internal fun QrDecodePreset.label(): String = when (this) {
     QrDecodePreset.FAST -> "Nhanh"
     QrDecodePreset.MAXIMUM -> "Tối đa"
+}
+
+internal fun ScanFrameStyle.label(): String = when (this) {
+    ScanFrameStyle.ROUNDED -> "Bo góc"
+    ScanFrameStyle.CORNERS -> "Góc"
+    ScanFrameStyle.SQUARE -> "Vuông"
+}
+
+internal fun ScanBoundaryStyle.label(): String = when (this) {
+    ScanBoundaryStyle.ROUNDED -> "Bo góc"
+    ScanBoundaryStyle.SQUARE -> "Vuông"
 }
 
 internal fun AnalysisSize.shortLabel(): String = "${height}p"

@@ -42,6 +42,9 @@ object AppSettings {
     private const val PIPELINE_STATUS_ENABLED = "pipeline_status_enabled"
     private const val ADVANCED_COPY_ENABLED = "advanced_copy_enabled"
     private const val SANITIZE_RESULTS = "sanitize_results"
+    private const val HAPTICS_ENABLED = "haptics_enabled"
+    private const val SCAN_FRAME_STYLE = "scan_frame_style"
+    private const val SCAN_BOUNDARY_STYLE = "scan_boundary_style"
     private const val ANALYSIS_FPS = "analysis_fps"
     private const val ANALYSIS_FPS_PRESET = "analysis_fps_preset"
     private const val CUSTOM_ANALYSIS_FPS = "custom_analysis_fps"
@@ -51,6 +54,9 @@ object AppSettings {
     private const val DEFAULT_PIPELINE_STATUS_ENABLED = false
     private const val DEFAULT_ADVANCED_COPY_ENABLED = false
     private const val DEFAULT_SANITIZE_RESULTS = true
+    private const val DEFAULT_HAPTICS_ENABLED = true
+    private const val DEFAULT_SCAN_FRAME_STYLE = "ROUNDED"
+    private const val DEFAULT_SCAN_BOUNDARY_STYLE = "ROUNDED"
     private const val DEFAULT_CUSTOM_ANALYSIS_WIDTH = 1280
     private const val DEFAULT_CUSTOM_ANALYSIS_HEIGHT = 720
 
@@ -173,6 +179,31 @@ object AppSettings {
 
     fun setSanitizeResults(context: Context, enabled: Boolean) {
         preferences(context).edit { putBoolean(SANITIZE_RESULTS, enabled) }
+    }
+
+    fun hapticsEnabled(context: Context): Boolean =
+        preferences(context).getBoolean(HAPTICS_ENABLED, DEFAULT_HAPTICS_ENABLED)
+
+    fun setHapticsEnabled(context: Context, enabled: Boolean) {
+        preferences(context).edit { putBoolean(HAPTICS_ENABLED, enabled) }
+    }
+
+    fun scanFrameStyle(context: Context): ScanFrameStyle =
+        ScanFrameStyle.fromName(
+            preferences(context).getString(SCAN_FRAME_STYLE, DEFAULT_SCAN_FRAME_STYLE),
+        )
+
+    fun setScanFrameStyle(context: Context, style: ScanFrameStyle) {
+        preferences(context).edit { putString(SCAN_FRAME_STYLE, style.name) }
+    }
+
+    fun scanBoundaryStyle(context: Context): ScanBoundaryStyle =
+        ScanBoundaryStyle.fromName(
+            preferences(context).getString(SCAN_BOUNDARY_STYLE, DEFAULT_SCAN_BOUNDARY_STYLE),
+        )
+
+    fun setScanBoundaryStyle(context: Context, style: ScanBoundaryStyle) {
+        preferences(context).edit { putString(SCAN_BOUNDARY_STYLE, style.name) }
     }
 
     fun analysisFpsPreset(context: Context): AnalysisFpsPreset {
@@ -306,6 +337,9 @@ object AppSettings {
         pipelineStatusEnabled = DEFAULT_PIPELINE_STATUS_ENABLED,
         advancedCopyEnabled = DEFAULT_ADVANCED_COPY_ENABLED,
         sanitizeResults = DEFAULT_SANITIZE_RESULTS,
+        hapticsEnabled = DEFAULT_HAPTICS_ENABLED,
+        scanFrameStyle = ScanFrameStyle.fromName(DEFAULT_SCAN_FRAME_STYLE),
+        scanBoundaryStyle = ScanBoundaryStyle.fromName(DEFAULT_SCAN_BOUNDARY_STYLE),
         analysisResolutionPreset = analysisResolutionPreset(
             DEFAULT_ANALYSIS_RESOLUTION_PRESET,
         ),
