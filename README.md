@@ -30,6 +30,10 @@ common QR formats.
 
 ## Supported input
 
+Only QR Code Model 2 symbols are decoded. Measured symbol limits, capture
+guidance, and out-of-spec behaviour are in
+[QR symbol support](docs/qr-symbol-support.md).
+
 - VietQR with the NAPAS provider (`A000000727`).
 - Wi-Fi (`WIFI:`), vCard/MECARD/BIZCARD, email, phone, SMS/MMS, location, ISBN,
   and HTTP(S) links.
@@ -38,6 +42,8 @@ common QR formats.
   `https://api.vietqr.io/v2/banks`; the app never requests it at runtime.
 - Formats are detected from specific to generic, so `mailto:` and `sms:` are not
   treated as links and `WIFI:` is not treated as text.
+- Wi-Fi, contacts, email, phone, SMS, location, and ISBN are parsed and shown
+  only; the app does not connect to networks or launch other apps.
 - Invalid-CRC VietQR and plain text open a raw sheet that can copy/share.
   HTTP(S) payloads open a link sheet with a browser action. An unsupported bank
   keeps the parsed sheet and previews the raw payload for copy.
@@ -79,7 +85,9 @@ and `KEY_PASSWORD` from CI secrets instead.
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-Manual QR fixtures with expected results are in [`test-qr/`](test-qr/).
+Manual QR fixtures with expected results are in [`test-qr/`](test-qr/);
+symbol-level cases are in [`test-qr/hard/`](test-qr/hard). The host decoder
+benchmark lives in [`tools/qr_symbol_bench/`](tools/qr_symbol_bench/README.md).
 
 ## Release
 
@@ -106,16 +114,19 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 ## Controls
 
 - **Cài đặt**: full-screen screen with four groups: Quét, Chuyển khoản,
-  Riêng tư, Hiệu năng camera. Masking level `0` off, `1` light, `2` full
-  (default `0`) with a live field preview; confirmation for opening MB Bank;
-  scan-inside-frame with margin `0–100%` (default `50`) and a frame preview;
-  clipboard expiry `0` = off, otherwise `15–300s` in 15s steps (default `60`).
-  Rows that differ from the factory value expose a **Mặc định** action. The
-  overflow menu holds **Thông tin** (credits, version, source, license) and
-  **Khôi phục mặc định**.
-- **Hiệu năng camera**: **Quét trực tiếp** expands to decode preset, analysis
-  resolution, and frame rate; **Quét ảnh** expands to the still-image preset.
-  Collapsed rows show the current resolution and frame rate.
+  Riêng tư, Nâng cao. Each group collapses by tapping its header; Nâng cao
+  starts collapsed. Masking level (default off) with a live field preview;
+  confirmation for opening MB Bank; scan-inside-frame with margin `0–100%`
+  (default `50`) and a frame preview; clipboard expiry `0` = off, otherwise
+  `15–300s` in 15s steps (default `60`). Rows that differ from
+  the factory value expose a **Mặc định** action. The overflow menu holds
+  **Thông tin** (credits, version, source, license) and **Khôi phục mặc định**.
+- **Nâng cao**: **Lọc ký tự không an toàn** (default on) cleans displayed and
+  copied values; **Bật copy nâng cao** (default off) adds **Hex** and
+  **Base64** copy buttons to the result sheet; **Hiện thông tin xử lý**.
+  **Quét trực tiếp** expands to decode preset, analysis resolution, and frame
+  rate; **Quét ảnh** expands to the still-image preset. Collapsed rows show the
+  current resolution and frame rate.
 - **Preset giải mã**: live camera and still images have independent
   `Nhanh` / `Tối đa` presets. Defaults are `Nhanh` for live and `Tối đa` for
   images.
@@ -135,44 +146,32 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 - **Shutter**: full-resolution capture.
 - **Clipboard pill**: tap to copy again and restart the timer when enabled;
   long-press to clear.
-- **Parsed fields**: tap a masked value or its eye icon to toggle visibility.
-  Long-press copies the real value without changing visibility. Amounts copy as
-  raw digits, such as `10000`.
 
 ## Behavior
 
 ### Scanning
 
 - **Chỉ quét QR trong khung** is off by default. When on, live camera frames are
-  cropped to the frame plus a margin (0–100% of the tightest gap). Shutter,
-  gallery, and shared images scan the full image.
-- ZXing-C++ handles live frames and still images. Java ZXing is retained only
-  for parsing payload formats.
+  cropped to the frame plus the configured margin. Shutter, gallery, and shared
+  images scan the full image.
 - Shared images use the sender's URI once; no gallery or storage permission is
   requested.
 - The merchant-name field is appended only when present; MB resolves the
   recipient separately.
 
-### Decode pipeline
+### Sanitizing
 
-1. Decode the frame or bitmap directly with ZXing-C++.
-2. On failure, `Tối đa` adds a white quiet-zone border and decodes with denoise.
-3. `Tối đa` then retries with upscaling.
-4. Direct decodes are accepted immediately; there is no background-color
-   normalization or center-crop stage.
-
-Live and still presets are independent. Camera analysis resolution is also
-independent and affects live frames only.
-
-### Other QR formats
-
-- Wi-Fi shows network name, security, password, and hidden-network state. It is
-  parsed only; the app does not connect or request Wi-Fi permissions.
-- Contacts, email, phone, SMS, location, and ISBN show parsed fields without
-  launching another app.
-- HTTP(S) links appear as a link sheet with **Mở liên kết**.
-- Every parsed field supports long-press copy. Field copies use the clipboard
-  timer.
+- **Lọc ký tự không an toàn** runs after parsing: TLV lengths and the VietQR CRC
+  are still computed on the original payload, then every displayed value and the
+  raw block are cleaned.
+- Dropped: control characters (except line feeds and tabs), bidirectional
+  controls, zero-width characters, BOM, soft hyphens, and unpaired surrogates.
+  Visible characters, Vietnamese diacritics, and emoji are kept.
+- Copy, share, and the MB handoff use the cleaned text, so copying matches what
+  the sheet displays. Because characters are removed, a copied raw payload can
+  be structurally different from the scanned one; the advanced **Hex** and
+  **Base64** actions encode the payload exactly as decoded, before normalization,
+  sanitizing, or masking.
 
 ### Sensitive fields
 
@@ -198,7 +197,7 @@ independent and affects live frames only.
   Bank**. A second failure reopens the normal transfer sheet via **Mở xác nhận
   chuyển khoản**.
 - Supported transfers copy only the bank prefix, account, amount, and merchant
-  name. Unsupported banks copy the raw payload.
+  name.
 - Amounts are rounded to two decimal places of the thousands value.
 - Paste into the MB hub with a long-press; transfer content is manual.
 
@@ -206,8 +205,7 @@ independent and affects live frames only.
 
 - Timer `0` disables auto-clear and the foreground service. The clipboard stays
   until it is overwritten or cleared manually.
-- A non-zero timer clears the clipboard on expiry or task removal. The pill can
-  restart the timer or clear the entry immediately.
+- A non-zero timer clears the clipboard on expiry or task removal.
 - After handoff, the camera stops and shows a countdown or persistent indicator;
   **Quét mã khác** restarts scanning.
 
