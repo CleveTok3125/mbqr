@@ -121,6 +121,7 @@ import vn.io.elsutm.mbqr.handoff.UrlDetector
 import vn.io.elsutm.mbqr.qr.QrContent
 import vn.io.elsutm.mbqr.qr.QrContentParser
 import vn.io.elsutm.mbqr.qr.QrField
+import vn.io.elsutm.mbqr.qr.PayloadEncoder
 import vn.io.elsutm.mbqr.qr.QrFieldSensitivity
 import vn.io.elsutm.mbqr.service.ClipboardExpiryService
 import vn.io.elsutm.mbqr.settings.AnalysisFpsPreset
@@ -160,6 +161,8 @@ fun ScannerScreen(
     var scanningEnabled by rememberSaveable { mutableStateOf(true) }
     var torchOn by rememberSaveable { mutableStateOf(false) }
     var sheetRaw by rememberSaveable { mutableStateOf<String?>(null) }
+    // Payload exactly as decoded, before normalization or sanitizing.
+    var sheetRawExact by rememberSaveable { mutableStateOf<String?>(null) }
     var sheetReason by rememberSaveable { mutableStateOf("") }
     var clipboardExpiresAt by rememberSaveable { mutableStateOf(0L) }
     var clipboardRemaining by rememberSaveable { mutableStateOf(0) }
@@ -200,6 +203,8 @@ fun ScannerScreen(
     var pipelineStatusEnabled by remember {
         mutableStateOf(AppSettings.pipelineStatusEnabled(context))
     }
+    var advancedCopyEnabled by remember { mutableStateOf(AppSettings.advancedCopyEnabled(context)) }
+    var sanitizeResults by remember { mutableStateOf(AppSettings.sanitizeResults(context)) }
     var analysisFpsPreset by remember {
         mutableStateOf(AppSettings.analysisFpsPreset(context))
     }
@@ -427,6 +432,14 @@ fun ScannerScreen(
                 if (!change.value) pipelineStatus = null
                 AppSettings.setPipelineStatusEnabled(context, change.value)
             }
+            is SettingsChange.AdvancedCopyEnabled -> {
+                advancedCopyEnabled = change.value
+                AppSettings.setAdvancedCopyEnabled(context, change.value)
+            }
+            is SettingsChange.SanitizeResults -> {
+                sanitizeResults = change.value
+                AppSettings.setSanitizeResults(context, change.value)
+            }
             is SettingsChange.ResolutionPreset -> {
                 analysisResolutionPreset = change.value
                 AppSettings.setAnalysisResolutionPreset(context, change.value)
@@ -451,6 +464,8 @@ fun ScannerScreen(
             SettingsChange.LiveDecodePreset(defaults.liveDecodePreset),
             SettingsChange.StillDecodePreset(defaults.stillDecodePreset),
             SettingsChange.PipelineStatusEnabled(defaults.pipelineStatusEnabled),
+            SettingsChange.AdvancedCopyEnabled(defaults.advancedCopyEnabled),
+            SettingsChange.SanitizeResults(defaults.sanitizeResults),
             SettingsChange.ResolutionPreset(defaults.analysisResolutionPreset),
             SettingsChange.FpsPreset(defaults.analysisFpsPreset),
         ).forEach { change -> applySettingsChange(change) }
@@ -459,6 +474,7 @@ fun ScannerScreen(
     fun showSheet(raw: String, reason: String) {
         scanningEnabled = false
         sheetRaw = QrContentParser.normalized(raw)
+        sheetRawExact = raw
         sheetReason = reason
     }
 
@@ -483,6 +499,7 @@ fun ScannerScreen(
     fun closeSheet() {
         resetHandoff()
         sheetRaw = null
+        sheetRawExact = null
         scanningEnabled = true
     }
 
@@ -524,6 +541,7 @@ fun ScannerScreen(
         handoffPhaseName = HandoffPhase.Awaiting.name
         val opened = MbLauncher.open(context)
         sheetRaw = null
+        sheetRawExact = null
 
         if (!opened) {
             handoffPhaseName = if (handoffAttempt >= 2) {
@@ -552,7 +570,7 @@ fun ScannerScreen(
         // Any decoded QR is a scan success: either a sheet or the MB handoff follows.
         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
 
-        when (val content = QrContentParser.parse(raw)) {
+        when (val content = QrContentParser.parse(raw, sanitizeResults)) {
             is QrContent.VietQr -> {
                 val data = content.data
                 if (!content.crcValid) {
@@ -674,6 +692,7 @@ fun ScannerScreen(
         onSharedImageConsumed()
         resetHandoff()
         sheetRaw = null
+        sheetRawExact = null
         scanningEnabled = true
         decodePickedImage(uri, QrPipelineSource.SHARED)
     }
@@ -956,6 +975,8 @@ fun ScannerScreen(
                         liveDecodePreset = liveDecodePreset,
                         stillDecodePreset = stillDecodePreset,
                         pipelineStatusEnabled = pipelineStatusEnabled,
+                        advancedCopyEnabled = advancedCopyEnabled,
+                        sanitizeResults = sanitizeResults,
                         analysisResolutionPreset = analysisResolutionPreset,
                         customAnalysisSize = customAnalysisSize,
                         analysisFpsPreset = analysisFpsPreset,
@@ -987,9 +1008,30 @@ fun ScannerScreen(
 
     val raw = sheetRaw
     if (raw != null) {
-        val content = remember(raw) { QrContentParser.parse(raw) }
+        val content = remember(raw, sanitizeResults) {
+            QrContentParser.parse(raw, sanitizeResults)
+        }
         val mbInstalled = remember(raw, demoMode, demoCaseMbInstalled) {
             if (demoMode) demoCaseMbInstalled else MbLauncher.isInstalled(context)
+        }
+        // Advanced copy encodes the payload exactly as decoded: no
+        // normalization, sanitizing, or masking applies.
+        val exactRaw = sheetRawExact ?: content.raw
+        val onCopyHex: (() -> Unit)? = if (advancedCopyEnabled && !demoMode) {
+            ({
+                copyToClipboard(PayloadEncoder.toHex(exactRaw))
+                Toast.makeText(context, "Đã copy Hex", Toast.LENGTH_SHORT).show()
+            })
+        } else {
+            null
+        }
+        val onCopyBase64: (() -> Unit)? = if (advancedCopyEnabled && !demoMode) {
+            ({
+                copyToClipboard(PayloadEncoder.toBase64(exactRaw))
+                Toast.makeText(context, "Đã copy Base64", Toast.LENGTH_SHORT).show()
+            })
+        } else {
+            null
         }
         val maxSheetHeight = (LocalConfiguration.current.screenHeightDp.dp - 48.dp)
             .coerceAtLeast(0.dp)
@@ -998,6 +1040,7 @@ fun ScannerScreen(
             onDismissRequest = {
                 resetHandoff()
                 sheetRaw = null
+                sheetRawExact = null
                 scanningEnabled = true
             },
             sheetState = sheetState,
@@ -1014,7 +1057,7 @@ fun ScannerScreen(
                         if (!content.crcValid) {
                             RawQrSheetContent(
                                 reason = sheetReason,
-                                raw = raw,
+                                raw = content.raw,
                                 maskingActive = rawMaskingActive(
                                     sensitiveMaskingLevel,
                                     hasHiddenVietQrFields(content.data, sensitiveMaskingLevel),
@@ -1023,13 +1066,15 @@ fun ScannerScreen(
                                 onCopy = if (demoMode) {
                                     ({})
                                 } else {
-                                    ({ closeSheetAndCopy(raw) })
+                                    ({ closeSheetAndCopy(content.raw) })
                                 },
                                 onShare = if (demoMode) {
                                     ({})
                                 } else {
-                                    ({ shareOrToast(raw) })
+                                    ({ shareOrToast(content.raw) })
                                 },
+                                onCopyHex = onCopyHex,
+                                onCopyBase64 = onCopyBase64,
                                 onScanAgain = { closeSheet() },
                             )
                         } else {
@@ -1044,7 +1089,7 @@ fun ScannerScreen(
                                 reason = sheetReason,
                                 data = data,
                                 bankName = BankDirectory.find(data.bankBin)?.shortName,
-                                copyText = transferText ?: raw,
+                                copyText = transferText ?: content.raw,
                                 copyTitle = if (transferText != null) {
                                     TRANSFER_CONTENT_TITLE
                                 } else {
@@ -1067,18 +1112,20 @@ fun ScannerScreen(
                                 } else if (demoMode) {
                                     ({})
                                 } else {
-                                    ({ beginHandoff(raw, transferText) })
+                                    ({ beginHandoff(exactRaw, transferText) })
                                 },
                                 onCopy = if (demoMode) {
                                     ({})
                                 } else {
-                                    ({ closeSheetAndCopy(transferText ?: raw) })
+                                    ({ closeSheetAndCopy(transferText ?: content.raw) })
                                 },
                                 onShare = if (demoMode) {
                                     ({})
                                 } else {
-                                    ({ shareOrToast(transferText ?: raw) })
+                                    ({ shareOrToast(transferText ?: content.raw) })
                                 },
+                                onCopyHex = onCopyHex,
+                                onCopyBase64 = onCopyBase64,
                                 onFieldLongClick = { value -> copyField(value) },
                                 onScanAgain = { closeSheet() },
                             )
@@ -1099,6 +1146,8 @@ fun ScannerScreen(
                             } else {
                                 ({ shareOrToast(content.raw) })
                             },
+                            onCopyHex = onCopyHex,
+                            onCopyBase64 = onCopyBase64,
                             onOpenLink = if (demoMode) {
                                 ({})
                             } else {
@@ -1112,7 +1161,7 @@ fun ScannerScreen(
                     is QrContent.Text -> {
                         RawQrSheetContent(
                             reason = sheetReason.ifBlank { "Nội dung QR" },
-                            raw = raw,
+                            raw = content.raw,
                             maskingActive = rawMaskingActive(
                                 sensitiveMaskingLevel,
                                 hasHiddenParsedFields = false,
@@ -1121,13 +1170,15 @@ fun ScannerScreen(
                             onCopy = if (demoMode) {
                                 ({})
                             } else {
-                                ({ closeSheetAndCopy(raw) })
+                                ({ closeSheetAndCopy(content.raw) })
                             },
                             onShare = if (demoMode) {
                                 ({})
                             } else {
-                                ({ shareOrToast(raw) })
+                                ({ shareOrToast(content.raw) })
                             },
+                            onCopyHex = onCopyHex,
+                            onCopyBase64 = onCopyBase64,
                             onScanAgain = { closeSheet() },
                         )
                     }
@@ -1314,6 +1365,8 @@ fun ScannerScreen(
 private fun SheetCopyShareActions(
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onCopyHex: (() -> Unit)? = null,
+    onCopyBase64: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1336,6 +1389,20 @@ private fun SheetCopyShareActions(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text("Chia sẻ")
+        }
+    }
+
+    if (onCopyHex != null && onCopyBase64 != null) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OutlinedButton(onClick = onCopyHex, modifier = Modifier.weight(1f)) {
+                Text("Hex")
+            }
+            OutlinedButton(onClick = onCopyBase64, modifier = Modifier.weight(1f)) {
+                Text("Base64")
+            }
         }
     }
 }
@@ -1368,6 +1435,8 @@ private fun ParsedQrSheetContent(
     onOpenMb: (() -> Unit)?,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onCopyHex: (() -> Unit)?,
+    onCopyBase64: (() -> Unit)?,
     onFieldLongClick: (String) -> Unit,
     onScanAgain: () -> Unit,
 ) {
@@ -1443,6 +1512,8 @@ private fun ParsedQrSheetContent(
         SheetCopyShareActions(
             onCopy = onCopy,
             onShare = onShare,
+            onCopyHex = onCopyHex,
+            onCopyBase64 = onCopyBase64,
         )
 
         SheetScanAgainButton(onClick = onScanAgain)
@@ -1614,6 +1685,8 @@ private fun DetailsQrSheetContent(
     sensitiveMaskingLevel: Int,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onCopyHex: (() -> Unit)?,
+    onCopyBase64: (() -> Unit)?,
     onOpenLink: () -> Unit,
     onFieldLongClick: (QrField) -> Unit,
     onScanAgain: () -> Unit,
@@ -1655,6 +1728,8 @@ private fun DetailsQrSheetContent(
         SheetCopyShareActions(
             onCopy = onCopy,
             onShare = onShare,
+            onCopyHex = onCopyHex,
+            onCopyBase64 = onCopyBase64,
         )
 
         if (UrlDetector.isHttpUrl(details.raw)) {
@@ -1697,6 +1772,8 @@ private fun RawQrSheetContent(
     sensitiveMaskingLevel: Int,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onCopyHex: (() -> Unit)?,
+    onCopyBase64: (() -> Unit)?,
     onScanAgain: () -> Unit,
 ) {
     Column(
@@ -1717,6 +1794,8 @@ private fun RawQrSheetContent(
         SheetCopyShareActions(
             onCopy = onCopy,
             onShare = onShare,
+            onCopyHex = onCopyHex,
+            onCopyBase64 = onCopyBase64,
         )
 
         SheetScanAgainButton(onClick = onScanAgain)

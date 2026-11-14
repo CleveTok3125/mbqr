@@ -10,6 +10,8 @@ data class SettingsDefaults(
     val liveDecodePreset: QrDecodePreset,
     val stillDecodePreset: QrDecodePreset,
     val pipelineStatusEnabled: Boolean,
+    val advancedCopyEnabled: Boolean,
+    val sanitizeResults: Boolean,
     val analysisResolutionPreset: AnalysisResolutionPreset,
     val analysisFpsPreset: AnalysisFpsPreset,
 )

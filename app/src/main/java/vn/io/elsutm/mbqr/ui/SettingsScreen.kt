@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -75,6 +76,8 @@ internal data class SettingsSnapshot(
     val liveDecodePreset: QrDecodePreset,
     val stillDecodePreset: QrDecodePreset,
     val pipelineStatusEnabled: Boolean,
+    val advancedCopyEnabled: Boolean,
+    val sanitizeResults: Boolean,
     val analysisResolutionPreset: AnalysisResolutionPreset,
     val customAnalysisSize: AnalysisSize,
     val analysisFpsPreset: AnalysisFpsPreset,
@@ -95,6 +98,8 @@ internal sealed interface SettingsChange {
     data class LiveDecodePreset(val value: QrDecodePreset) : SettingsChange
     data class StillDecodePreset(val value: QrDecodePreset) : SettingsChange
     data class PipelineStatusEnabled(val value: Boolean) : SettingsChange
+    data class AdvancedCopyEnabled(val value: Boolean) : SettingsChange
+    data class SanitizeResults(val value: Boolean) : SettingsChange
     data class ResolutionPreset(val value: AnalysisResolutionPreset) : SettingsChange
     data class FpsPreset(val value: AnalysisFpsPreset) : SettingsChange
 }
@@ -118,6 +123,10 @@ internal fun SettingsScreen(
     var confirmRestore by remember { mutableStateOf(false) }
     var liveExpanded by rememberSaveable { mutableStateOf(false) }
     var stillExpanded by rememberSaveable { mutableStateOf(false) }
+    var scanSectionExpanded by rememberSaveable { mutableStateOf(true) }
+    var transferSectionExpanded by rememberSaveable { mutableStateOf(true) }
+    var privacySectionExpanded by rememberSaveable { mutableStateOf(true) }
+    var advancedSectionExpanded by rememberSaveable { mutableStateOf(false) }
 
     BackHandler(onBack = onClose)
     SettingsStatusBarAppearance()
@@ -179,7 +188,11 @@ internal fun SettingsScreen(
                     .padding(horizontal = 20.dp)
                     .padding(top = 4.dp, bottom = 32.dp),
             ) {
-                SettingsSection("Quét") {
+                SettingsSection(
+                    title = "Quét",
+                    expanded = scanSectionExpanded,
+                    onExpandChange = { scanSectionExpanded = it },
+                ) {
                     ToggleSetting(
                         title = "Chỉ quét trong khung",
                         checked = values.scanInsideFrame,
@@ -216,7 +229,11 @@ internal fun SettingsScreen(
                     )
                 }
 
-                SettingsSection("Chuyển khoản") {
+                SettingsSection(
+                    title = "Chuyển khoản",
+                    expanded = transferSectionExpanded,
+                    onExpandChange = { transferSectionExpanded = it },
+                ) {
                     ToggleSetting(
                         title = "Hỏi trước khi mở MB Bank",
                         checked = values.confirmBeforeOpeningMb,
@@ -255,7 +272,11 @@ internal fun SettingsScreen(
                     )
                 }
 
-                SettingsSection("Riêng tư") {
+                SettingsSection(
+                    title = "Riêng tư",
+                    expanded = privacySectionExpanded,
+                    onExpandChange = { privacySectionExpanded = it },
+                ) {
                     ChoiceSetting(
                         title = "Ẩn dữ liệu nhạy cảm",
                         options = listOf(
@@ -285,6 +306,43 @@ internal fun SettingsScreen(
                         },
                     )
                     MaskingPreview(level = values.sensitiveMaskingLevel)
+                }
+
+                SettingsSection(
+                    title = "Nâng cao",
+                    expanded = advancedSectionExpanded,
+                    onExpandChange = { advancedSectionExpanded = it },
+                ) {
+                    ToggleSetting(
+                        title = "Lọc ký tự không an toàn",
+                        checked = values.sanitizeResults,
+                        resetVisible = values.sanitizeResults != defaults.sanitizeResults,
+                        onReset = {
+                            onValueChange(
+                                SettingsChange.SanitizeResults(defaults.sanitizeResults),
+                            )
+                        },
+                        onCheckedChange = {
+                            onValueChange(SettingsChange.SanitizeResults(it))
+                        },
+                    )
+                    SettingsDivider()
+                    ToggleSetting(
+                        title = "Bật copy nâng cao",
+                        checked = values.advancedCopyEnabled,
+                        resetVisible = values.advancedCopyEnabled !=
+                            defaults.advancedCopyEnabled,
+                        onReset = {
+                            onValueChange(
+                                SettingsChange.AdvancedCopyEnabled(
+                                    defaults.advancedCopyEnabled,
+                                ),
+                            )
+                        },
+                        onCheckedChange = {
+                            onValueChange(SettingsChange.AdvancedCopyEnabled(it))
+                        },
+                    )
                     SettingsDivider()
                     ToggleSetting(
                         title = "Hiện thông tin xử lý",
@@ -302,9 +360,7 @@ internal fun SettingsScreen(
                             onValueChange(SettingsChange.PipelineStatusEnabled(it))
                         },
                     )
-                }
-
-                SettingsSection("Hiệu năng camera") {
+                    SettingsDivider()
                     ExpandableSetting(
                         title = "Quét trực tiếp",
                         summary = liveSummary(
@@ -444,16 +500,44 @@ private fun SettingsStatusBarAppearance() {
 @Composable
 private fun SettingsSection(
     title: String,
+    expanded: Boolean,
+    onExpandChange: (Boolean) -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(modifier = Modifier.padding(top = 20.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        content()
+    Column(modifier = Modifier.padding(top = 16.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(
+                    role = Role.Button,
+                    onClickLabel = if (expanded) "Thu gọn" else "Mở rộng",
+                    onClick = { onExpandChange(!expanded) },
+                )
+                .padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                painter = painterResource(R.drawable.ic_expand_more),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(18.dp)
+                    .rotate(if (expanded) 180f else 0f),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (expanded) {
+            Spacer(modifier = Modifier.height(2.dp))
+            content()
+        }
     }
 }
 
@@ -520,6 +604,7 @@ private fun ToggleSetting(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .toggleable(
                 value = checked,
                 role = Role.Switch,

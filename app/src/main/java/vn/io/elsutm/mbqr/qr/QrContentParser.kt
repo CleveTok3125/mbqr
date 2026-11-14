@@ -57,9 +57,17 @@ object QrContentParser {
      * Parses [raw] into transfer data, displayable details, or plain text.
      *
      * Surrounding whitespace and invisible markers are removed while line breaks
-     * remain available to formats such as vCard.
+     * remain available to formats such as vCard. When [sanitize] is true, the
+     * output keeps its structure but invisible characters are stripped from
+     * every displayed value; parsing still runs on the original payload so TLV
+     * lengths and the CRC stay valid.
      */
-    fun parse(raw: String): QrContent {
+    fun parse(raw: String, sanitize: Boolean = true): QrContent {
+        val content = parseUnsanitized(raw)
+        return if (sanitize) content.sanitized() else content
+    }
+
+    private fun parseUnsanitized(raw: String): QrContent {
         val normalized = normalized(raw)
         if (normalized.isEmpty()) return QrContent.Text(normalized)
 
@@ -78,6 +86,47 @@ object QrContentParser {
         val rule = detectRule(normalized) ?: return QrContent.Text(normalized)
         return parseRule(rule, normalized)
     }
+
+    private fun QrContent.sanitized(): QrContent = when (this) {
+        is QrContent.VietQr -> {
+            val clean = data.copy(
+                bankBin = TextSanitizer.sanitize(data.bankBin),
+                account = TextSanitizer.sanitize(data.account),
+                merchantName = data.merchantName.sanitizedOrNull(),
+                content = data.content.sanitizedOrNull(),
+            )
+            if (clean.bankBin.length != 6 || clean.account.isBlank()) {
+                QrContent.Text(TextSanitizer.sanitize(raw))
+            } else {
+                copy(raw = TextSanitizer.sanitize(raw), data = clean)
+            }
+        }
+
+        is QrContent.Details -> {
+            val cleanFields = fields.mapNotNull { field ->
+                val value = TextSanitizer.sanitize(field.value)
+                if (value.isBlank()) {
+                    null
+                } else {
+                    field.copy(label = TextSanitizer.sanitize(field.label), value = value)
+                }
+            }
+            if (cleanFields.isEmpty()) {
+                QrContent.Text(TextSanitizer.sanitize(raw))
+            } else {
+                copy(
+                    raw = TextSanitizer.sanitize(raw),
+                    title = TextSanitizer.sanitize(title),
+                    fields = cleanFields,
+                )
+            }
+        }
+
+        is QrContent.Text -> copy(raw = TextSanitizer.sanitize(raw))
+    }
+
+    private fun String?.sanitizedOrNull(): String? =
+        this?.let(TextSanitizer::sanitize)?.takeIf { it.isNotBlank() }
 
     /** Returns the payload with surrounding whitespace and invisible markers removed. */
     fun normalized(raw: String): String =

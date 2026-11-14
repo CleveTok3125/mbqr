@@ -40,6 +40,8 @@ object AppSettings {
     private const val CUSTOM_ANALYSIS_WIDTH = "custom_analysis_width"
     private const val CUSTOM_ANALYSIS_HEIGHT = "custom_analysis_height"
     private const val PIPELINE_STATUS_ENABLED = "pipeline_status_enabled"
+    private const val ADVANCED_COPY_ENABLED = "advanced_copy_enabled"
+    private const val SANITIZE_RESULTS = "sanitize_results"
     private const val ANALYSIS_FPS = "analysis_fps"
     private const val ANALYSIS_FPS_PRESET = "analysis_fps_preset"
     private const val CUSTOM_ANALYSIS_FPS = "custom_analysis_fps"
@@ -47,6 +49,8 @@ object AppSettings {
     private const val DEFAULT_STILL_DECODE_PRESET = "MAXIMUM"
     private const val DEFAULT_ANALYSIS_RESOLUTION_PRESET = "P720"
     private const val DEFAULT_PIPELINE_STATUS_ENABLED = false
+    private const val DEFAULT_ADVANCED_COPY_ENABLED = false
+    private const val DEFAULT_SANITIZE_RESULTS = true
     private const val DEFAULT_CUSTOM_ANALYSIS_WIDTH = 1280
     private const val DEFAULT_CUSTOM_ANALYSIS_HEIGHT = 720
 
@@ -152,6 +156,23 @@ object AppSettings {
 
     fun setPipelineStatusEnabled(context: Context, enabled: Boolean) {
         preferences(context).edit { putBoolean(PIPELINE_STATUS_ENABLED, enabled) }
+    }
+
+    fun advancedCopyEnabled(context: Context): Boolean =
+        preferences(context).getBoolean(
+            ADVANCED_COPY_ENABLED,
+            DEFAULT_ADVANCED_COPY_ENABLED,
+        )
+
+    fun setAdvancedCopyEnabled(context: Context, enabled: Boolean) {
+        preferences(context).edit { putBoolean(ADVANCED_COPY_ENABLED, enabled) }
+    }
+
+    fun sanitizeResults(context: Context): Boolean =
+        preferences(context).getBoolean(SANITIZE_RESULTS, DEFAULT_SANITIZE_RESULTS)
+
+    fun setSanitizeResults(context: Context, enabled: Boolean) {
+        preferences(context).edit { putBoolean(SANITIZE_RESULTS, enabled) }
     }
 
     fun analysisFpsPreset(context: Context): AnalysisFpsPreset {
@@ -283,6 +304,8 @@ object AppSettings {
             QrDecodePreset.MAXIMUM,
         ),
         pipelineStatusEnabled = DEFAULT_PIPELINE_STATUS_ENABLED,
+        advancedCopyEnabled = DEFAULT_ADVANCED_COPY_ENABLED,
+        sanitizeResults = DEFAULT_SANITIZE_RESULTS,
         analysisResolutionPreset = analysisResolutionPreset(
             DEFAULT_ANALYSIS_RESOLUTION_PRESET,
         ),

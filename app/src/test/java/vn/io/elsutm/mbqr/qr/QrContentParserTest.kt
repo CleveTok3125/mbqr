@@ -192,6 +192,41 @@ class QrContentParserTest {
     }
 
     @Test
+    fun `sanitizes displayed values and raw without reparsing`() {
+        val wifi = QrContentParser.parse(
+            "WIFI:T:WPA;S:Ho\u200Bme;P:se\u202Ecret;;",
+        ) as QrContent.Details
+
+        assertEquals("Home", wifi.field("Tên mạng"))
+        assertEquals("secret", wifi.field("Mật khẩu"))
+        assertFalse(wifi.raw.contains('\u200B'))
+        assertFalse(wifi.raw.contains('\u202E'))
+
+        val unsanitized = QrContentParser.parse(
+            "WIFI:T:WPA;S:Ho\u202Eme;P:secret;;",
+            sanitize = false,
+        ) as QrContent.Details
+        assertEquals("Ho\u202Eme", unsanitized.field("Tên mạng"))
+    }
+
+    @Test
+    fun `sanitized plain text drops invisible characters`() {
+        val text = QrContentParser.parse("\u200Bhello\u202E world\uFEFF") as QrContent.Text
+        assertEquals("hello world", text.raw)
+
+        val kept = QrContentParser.parse("hello\u202E", sanitize = false) as QrContent.Text
+        assertEquals("hello\u202E", kept.raw)
+    }
+
+    @Test
+    fun `vietqr keeps crc and structure while sanitizing`() {
+        val content = QrContentParser.parse(SAMPLE) as QrContent.VietQr
+        assertTrue(content.crcValid)
+        assertEquals(SAMPLE, content.raw)
+        assertEquals("0941196908", content.data.account)
+    }
+
+    @Test
     fun `manual test qr set parses as expected`() {
         MANUAL_CASES.forEach { case ->
             when (val expected = case.expected) {

@@ -118,6 +118,8 @@ class AppSettingsTest {
         assertEquals(QrDecodePreset.FAST, defaults.liveDecodePreset)
         assertEquals(QrDecodePreset.MAXIMUM, defaults.stillDecodePreset)
         assertEquals(false, defaults.pipelineStatusEnabled)
+        assertEquals(false, defaults.advancedCopyEnabled)
+        assertEquals(true, defaults.sanitizeResults)
         assertEquals(AnalysisResolutionPreset.P720, defaults.analysisResolutionPreset)
         assertEquals(AnalysisFpsPreset.FPS_24, defaults.analysisFpsPreset)
     }
