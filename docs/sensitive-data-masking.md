@@ -1,33 +1,17 @@
 # Sensitive data masking
 
 QR result sheets can hide selected values before display. Masking affects the
-screen only. Copy, share, MB Bank handoff, and link actions use the real values.
+screen only: copy, share, MB Bank handoff, and link actions use the real values.
 
 ## Levels
 
 | Level | Name | Behavior |
 | --- | --- | --- |
 | `0` | Off | Show all parsed values |
-| `1` | Light | Hide direct secrets and identifiers while names and context remain visible |
-| `2` | Full | Hide direct secrets and identifiers plus personal context |
+| `1` | Light | Hide direct secrets and identifiers; names and context stay visible |
+| `2` | Full | Hide direct secrets, identifiers, and personal context |
 
-The app defaults to level `0`. Level `2` hides all sensitive fields. This
-includes names, subjects, and links.
-
-## Staircase summary
-
-`●` means visible. `×` means masked.
-
-| Field group | 0 | 1 | 2 |
-| --- | --- | --- | --- |
-| Always visible | ● | ● | ● |
-| Personal context | ● | ● | × |
-| Direct secrets and identifiers | ● | × | × |
-
-The `×` cells show the masking boundary for each level. Raw payload masking
-depends on the parsed fields. Level `0` always shows raw payloads. Level `2`
-always masks them. At level `1`, the app masks a raw payload only when it also
-masks a parsed field.
+Default is level `0`.
 
 ## Field groups
 
@@ -60,15 +44,15 @@ masks a parsed field.
 
 ### Raw payload
 
-Level `0` always shows raw payloads. Level `2` always masks them. At level `1`,
-the app masks a raw payload only when it also masks a parsed field. Text-only
+Raw payloads follow the parsed fields: visible at level `0`, masked at level
+`2`, and at level `1` masked only when a parsed field is also masked. Text-only
 payloads have no parsed fields, so they stay visible at level `1`.
 
 ## Interactions
 
 - Tap a masked value or its eye icon to toggle visibility.
 - Long-press a field to copy its real value without changing visibility.
-- When you open a result sheet again, masked values start hidden.
+- Sheets reopen with masked values hidden.
 - Level `0` removes masks and eye icons.
 
 ## Limitations

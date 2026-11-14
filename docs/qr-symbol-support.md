@@ -1,13 +1,12 @@
 # QR symbol support
 
-Scope: this page describes which **QR symbols** the app can decode, meaning the
-ISO/IEC 18004 QR Code structure. Payload formats are listed in
-[Supported input](../README.md#supported-input); they are a separate concern.
+This page covers QR symbol decoding (ISO/IEC 18004). Payload formats are in
+[Supported input](../README.md#supported-input).
 
-The app decodes with `io.github.zxing-cpp:android:3.1.1` and only enables its
-`QR_CODE` reader. The numbers below come from the host benchmark in
-[`tools/qr_symbol_bench/`](../tools/qr_symbol_bench/README.md), which pins the
-same `zxing-cpp` version and decodes generated bitmaps.
+The app uses `io.github.zxing-cpp:android:3.1.1` with only `QR_CODE` enabled.
+Numbers below come from the host benchmark in
+[`tools/qr_symbol_bench/`](../tools/qr_symbol_bench/README.md), pinned to the
+same version.
 
 ## Support levels
 
@@ -17,28 +16,24 @@ same `zxing-cpp` version and decodes generated bitmaps.
 | Best-effort | QR-like symbols outside the envelope or outside Model 2. The decoder may still read them; success depends on the image and is not promised. |
 | Unsupported | Not decoded at all: other barcode symbologies, and payloads that no image of the symbol can carry. |
 
-The benchmark sends generated bitmaps, not camera frames. Camera focus,
-exposure, motion, rolling shutter, and screen moiré narrow these limits.
-On-device validation with the fixtures in [`test-qr/hard/`](../test-qr/hard) is
-the final check; it is manual.
+The benchmark uses generated bitmaps, not camera frames. Focus, exposure,
+motion, rolling shutter, and moiré narrow these limits. `test-qr/hard/` is the
+manual device check.
 
 ## Measured decoder envelope
 
 512 cases, `zxing-cpp` 3.1.1, `try_rotate` and `try_invert` on, `try_downscale`
-on (the app disables it for live frames). `try_harder` and `try_denoise` are not
-exposed by the Python binding, so the app's own settings can shift these
-thresholds.
+on (the app disables it for live frames). The Python binding exposes no
+`try_harder` or `try_denoise`, so app presets can shift the thresholds.
 
 ### Versions and error correction
 
-Every combination below decoded with 100% success on clean bitmaps: versions
-`1, 2, 3, 5, 10, 15, 20, 25, 30, 35, 40` at EC levels `L`, `M`, `Q`, `H`, and
-module sizes `1, 2, 3, 4, 6, 8` px with a 4-module quiet zone and 50% payload.
+Clean bitmaps decoded at 100% for versions 1, 2, 3, 5, 10, 15, 20, 25, 30, 35,
+and 40 at EC L/M/Q/H, module sizes 1, 2, 3, 4, 6, and 8 px, a 4-module quiet
+zone, and 50% payload. Full byte-mode capacity also passed at 1–4 px for
+versions 1, 5, 10, 20, 30, and 40 at EC L and H.
 
-Full byte-mode capacity also decoded at every tested module size of 1–4 px for
-versions `1, 5, 10, 20, 30, 40` at EC `L` and `H`.
-
-Byte-mode capacity, matching the ISO/IEC 18004 limits:
+Byte-mode capacity (ISO/IEC 18004):
 
 | Version | L | M | Q | H |
 |---|---|---|---|---|
@@ -54,13 +49,12 @@ Byte-mode capacity, matching the ISO/IEC 18004 limits:
 | 35 | 2303 | 1809 | 1283 | 983 |
 | 40 | 2953 | 2331 | 1663 | 1273 |
 
-Decoding itself is not the limiting factor: the same symbols pass at 1 px per
-module. Capture quality is what removes headroom.
+The same symbols pass at 1 px per module; capture quality is the limit, not
+decoding.
 
 ### Capture degradations
 
-Version 10, EC `M`, 50% payload, 4-module quiet zone. Values are pass/fail per
-module size.
+Version 10, EC M, 50% payload, 4-module quiet zone.
 
 | Degradation | 2 px/module | 3 px/module |
 |---|---|---|
@@ -80,7 +74,7 @@ module size.
 | Centered occlusion 15% and above | fail | fail |
 | Random black damage 5% and above | fail | fail |
 
-Blur tolerance scales with module size, roughly half a module:
+Blur tolerance is about half a module:
 
 | Module size | Largest passing blur |
 |---|---|
@@ -89,7 +83,7 @@ Blur tolerance scales with module size, roughly half a module:
 | 4 px | 1.5 px |
 | 6 px | 2 px |
 
-Error correction raises the occlusion ceiling but not the black-damage one:
+Error correction raises the occlusion ceiling but not black-damage tolerance:
 
 | Degradation, version 10, 3 px/module | L | M | Q | H |
 |---|---|---|---|---|
@@ -98,14 +92,14 @@ Error correction raises the occlusion ceiling but not the black-damage one:
 | Centered occlusion 20% | fail | fail | fail | fail |
 | Random black damage 5% | fail | fail | fail | fail |
 
-Random black blocks can cover finder, timing, or alignment patterns, which are
-outside error correction. White occlusion in the data area is recoverable up to
-the EC budget.
+Black damage can cover finder, timing, or alignment patterns, which error
+correction cannot recover. White occlusion in the data area recovers up to the
+EC budget.
 
 ### Presets
 
-Version 30 and 40, EC `M` and `H`, 2 px/module. `Tối đa` adds about 6% white
-padding and a 2x upscale retry; the host benchmark cannot enable denoise.
+Version 30 and 40, EC M and H, 2 px/module. `Tối đa` adds about 6% white padding
+and a 2x upscale retry; the host binding cannot enable denoise.
 
 | Case | `Nhanh` | `Tối đa` |
 |---|---|---|
@@ -133,33 +127,30 @@ Decode time on the host: median 0.4 ms, maximum 5.8 ms per attempt.
 
 ## Capture guidance
 
-- Keep the symbol at 3 px per module or more and above 1 px per module after any
-  downscale. A version 40 symbol then needs roughly 550 px on its long side.
-- Hold steady: blur is the most common failure. Half a module of blur is the
-  approximate ceiling at each module size.
-- Stay under 15% occlusion and 20% perspective. Do not let anything cover the
-  three finder patterns.
-- Use `Tối đa` for still images; live scanning uses `Nhanh`. Raise the analysis
-  resolution only when the symbol is small in the frame.
-- `Chỉ quét trong khung` crops live frames, which helps focus and cost, but the
-  symbol must still sit inside the frame plus margin.
+- Keep 3 px per module or more, and above 1 px after any downscale. A version 40
+  symbol then needs roughly 550 px on its long side.
+- Blur is the main failure; keep it under about half a module.
+- Stay under 15% occlusion and 20% perspective, and never cover the finder
+  patterns.
+- Use `Tối đa` for still images and raise analysis resolution only for small
+  symbols. `Chỉ quét trong khung` crops live frames; the symbol must stay inside
+  the frame plus margin.
 
 ## Pipeline
 
-- Live frames: read `ImageProxy` directly, no downscale, one symbol, `Nhanh`
-  preset.
+- Live frames: read `ImageProxy` directly, no downscale, one symbol, `Nhanh`.
 - Still images, `Nhanh`: decode the bitmap directly.
-- Still images, `Tối đa`: pad with white, then decode with denoise, then retry
-  with a 2x upscale capped at 2048 px.
-- Defaults: 1280×720 analysis at 24 FPS; the resolution and rate are
-  configurable under **Nâng cao → Quét trực tiếp**.
+- Still images, `Tối đa`: pad with white, decode with denoise, then retry with a
+  2x upscale capped at 2048 px.
+- Defaults: 1280×720 analysis at 24 FPS; both are configurable under
+  **Nâng cao → Quét trực tiếp**.
 
 ## Verification
 
-- Synthetic symbol fixtures: `test-qr/hard/` covers perspective, low contrast,
-  blur and noise, tight crop, inverted, damaged, small-in-page, wobbly, dot,
-  logo, curved, high-density, line art, finder styles, and alpha color.
-- Payload fixtures: `test-qr/` covers VietQR, Wi-Fi, contacts, and links.
+- `test-qr/hard/` covers perspective, low contrast, blur, noise, tight crop,
+  inverted, damaged, small-in-page, wobbly, dot, logo, curved, high-density,
+  line art, finder styles, and alpha color.
+- `test-qr/` covers VietQR, Wi-Fi, contacts, and links.
 - Regenerate the benchmark:
 
   ```sh
@@ -169,5 +160,5 @@ Decode time on the host: median 0.4 ms, maximum 5.8 ms per attempt.
   .venv/bin/python bench.py
   ```
 
-- Device check: import each fixture through **Ảnh**, once with `Nhanh` and once
-  with `Tối đa`, from both a gallery image and a shared image.
+- Device check: import each fixture through **Ảnh** with `Nhanh` and `Tối đa`,
+  from both a gallery image and a shared image.

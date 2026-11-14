@@ -113,126 +113,97 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 
 ## Controls
 
-- **Cài đặt**: full-screen screen with six groups, ordered by how often they
-  change: Giao diện, Quét, Tương tác, Tích hợp, Riêng tư, Nâng cao. Each group
-  collapses by tapping its header; Nâng cao starts collapsed. **Giao diện** shows
-  one shared preview for the frame and margin, then sets the frame outline
-  (`Bo góc` default, `Góc`, `Vuông`), the scan margin `0–100%` (default `50`),
-  and its outline (`Bo góc` default, `Vuông`). Margin controls are disabled
-  until **Chỉ quét trong khung** is on.
-  **Quét** holds that toggle. **Tương tác** has **Rung** (default on).
-  **Tích hợp** holds the confirmation for opening MB Bank. **Riêng tư** has
-  masking (default off) with a live field preview and clipboard expiry (`0` =
-  off, otherwise `15–300s` in 15s steps, default `60`). Rows that differ from the
-  factory value expose a **Mặc định** action. The overflow menu holds
-  **Thông tin** (credits, version, source, license) and **Khôi phục mặc định**.
-- **Nâng cao**: **Lọc ký tự không an toàn** (default on) cleans displayed and
-  copied values; **Bật copy nâng cao** (default off) adds **Hex** and
-  **Base64** copy buttons to the result sheet; **Hiện thông tin xử lý**.
-  **Quét trực tiếp** expands to decode preset, analysis resolution, and frame
-  rate; **Quét ảnh** expands to the still-image preset. Collapsed rows show the
-  current resolution and frame rate.
-- **Preset giải mã**: live camera and still images have independent
-  `Nhanh` / `Tối đa` presets. Defaults are `Nhanh` for live and `Tối đa` for
-  images.
-- **Độ phân giải**: independent from presets. Default is `1280×720`;
-  fixed sizes are `480p` / `720p` / `1080p`, plus `Khác` with an exact
-  camera-supported width/height. If the selected size is unavailable, CameraX
-  uses the closest supported size.
-- **Tốc độ**: default `24` FPS. Fixed `10 / 24 / 30 / 60` options; values above
-  the selected resolution's sensor limit are disabled; `Khác` accepts `1–max`
-  FPS. The analyzer throttles to the selected rate.
-- **Pipeline status**: optional overlay, off by default, showing the current
-  decode stage, source, preset, elapsed time, and result. It is visible only
-  while a decode pipeline runs.
-- **Đèn / Ảnh**: torch; scan a gallery image or one image shared from another app.
-- **Arc dial**: zoom `1x` to camera max; ticks at powers of two, minor ticks per
-  interval, final tail clipped at max; haptics at ticks and endpoints when
-  **Rung** is on.
-- **Shutter**: full-resolution capture.
-- **Clipboard pill**: tap to copy again and restart the timer when enabled;
-  long-press to clear.
+- **Cài đặt**: six groups: Giao diện, Quét, Tương tác, Tích hợp, Riêng tư, Nâng
+  cao. Tap a header to collapse it; Nâng cao starts collapsed.
+- **Giao diện**: one shared frame/margin preview. Sets the frame outline (`Bo
+  góc` default, `Góc`, `Vuông`), scan margin `0–100%` (default `50`), and margin
+  outline (`Bo góc` default, `Vuông`). Margin controls need **Chỉ quét trong
+  khung**.
+- **Quét**: **Chỉ quét trong khung** (off by default).
+- **Tương tác**: **Rung** (default on).
+- **Tích hợp**: **Hỏi trước khi mở MB Bank** (default on).
+- **Riêng tư**: masking (`Tắt` / `Nhẹ` / `Toàn bộ`, default `Tắt`) and clipboard
+  expiry (`0` = off, otherwise `15–300s` in 15s steps, default `60`).
+- **Nâng cao**: **Lọc ký tự không an toàn** (default on), **Bật copy nâng cao**
+  (default off, adds **Hex** / **Base64** actions), **Hiện thông tin xử lý**
+  (decode overlay, default off), **Quét trực tiếp** (decoding, resolution, frame
+  rate), and **Quét ảnh** (still decoding).
+- **Preset giải mã**: independent `Nhanh` / `Tối đa`; live defaults to `Nhanh`,
+  still images to `Tối đa`.
+- **Độ phân giải**: default `1280×720`; `480p` / `720p` / `1080p`, plus `Khác`
+  with an exact supported size. Unsupported sizes use the closest available one.
+- **Tốc độ**: default `24` FPS; `10 / 24 / 30 / 60` plus `Khác` (`1–max`).
+  Options above the sensor limit are disabled.
+- **Camera**: torch, gallery/shared-image scan, arc zoom dial (`1x` to max with
+  haptics when **Rung** is on), and a full-resolution shutter.
+- **Clipboard pill**: tap to copy again and restart the timer; long-press to
+  clear.
+- Rows that differ from the factory value expose **Mặc định**. The overflow menu
+  holds **Thông tin** and **Khôi phục mặc định**.
 
 ## Behavior
 
 ### Scanning
 
-- **Chỉ quét QR trong khung** is off by default. When on, live camera frames are
-  cropped to the frame plus the configured margin. Shutter, gallery, and shared
-  images scan the full image.
-- **Kiểu khung** and **Kiểu lề** change only the outlines. The crop region,
-  margin, and decoded area stay the same.
-- **Rung** covers the zoom dial, the shutter button, and clipboard copy, restore,
-  and clear actions.
+- **Chỉ quét trong khung** is off by default. When on, live frames are cropped to
+  the frame plus margin; shutter, gallery, and shared images scan the full image.
+- **Kiểu khung** and **Kiểu lề** change outlines only. The crop region and
+  decoded area stay the same.
+- **Rung** covers the zoom dial, shutter, and clipboard copy, restore, and clear.
 - Shared images use the sender's URI once; no gallery or storage permission is
   requested.
-- The merchant-name field is appended only when present; MB resolves the
-  recipient separately.
+- The merchant name is appended only when present; MB resolves the recipient.
 
 ### Sanitizing
 
-- **Lọc ký tự không an toàn** runs after parsing: TLV lengths and the VietQR CRC
-  are still computed on the original payload, then every displayed value and the
-  raw block are cleaned.
-- Dropped: control characters (except line feeds and tabs), bidirectional
-  controls, zero-width characters, BOM, soft hyphens, and unpaired surrogates.
-  Visible characters, Vietnamese diacritics, and emoji are kept.
-- Copy, share, and the MB handoff use the cleaned text, so copying matches what
-  the sheet displays. Because characters are removed, a copied raw payload can
-  be structurally different from the scanned one; the advanced **Hex** and
-  **Base64** actions encode the payload exactly as decoded, before normalization,
-  sanitizing, or masking.
+- Runs after parsing: TLV lengths and the VietQR CRC still use the original
+  payload, then displayed values and the raw block are cleaned.
+- Removes control characters (except line feeds and tabs), bidi controls,
+  zero-width characters, BOM, soft hyphens, and unpaired surrogates; keeps
+  visible characters, Vietnamese diacritics, and emoji.
+- Copy, share, and handoff use cleaned text. Raw payloads can change because
+  characters are removed; **Hex** and **Base64** encode the payload exactly as
+  decoded, before normalization, sanitizing, or masking.
 
 ### Sensitive fields
 
-- **Mức ẩn dữ liệu nhạy cảm** has three levels: `0` off, `1` light, `2` full.
-  The default is off.
-- Level `1` hides direct secrets and identifiers. Level `2` also hides personal
-  context such as names, subjects, and links.
-- At level `0`, raw payloads stay visible. At level `2`, the app masks all raw
-  payloads. At level `1`, the app masks a raw payload only when it also masks a
-  parsed field.
-- Tap a masked value or its eye icon to show it. Tap again to hide it.
-- Long-press a field to copy the real value without changing the display. When
-  you open a sheet again, masked values start hidden.
+- Three masking levels: `0` off, `1` light, `2` full; default off.
+- Level `1` hides direct secrets and identifiers; level `2` also hides personal
+  context. Raw payload masking follows the parsed fields.
+- Tap a masked value or eye icon to toggle; long-press copies the real value.
+  Sheets reopen with masked values hidden.
 - See [Sensitive data masking](docs/sensitive-data-masking.md) for the field
-  matrix and limits.
+  matrix.
 
-### MB handoff
+### MB handoff and clipboard
 
 - Without MB Bank, the parsed sheet still offers copy, share, and scan again.
 - Confirmation is on by default. The clipboard is written before MB opens; a
-  non-zero timer starts then. Off copies and opens MB immediately.
+  non-zero timer starts then. With confirmation off, copy and MB open
+  immediately.
 - If MB does not foreground within 5 seconds, the paused screen offers **Mở MB
-  Bank**. A second failure reopens the normal transfer sheet via **Mở xác nhận
-  chuyển khoản**.
+  Bank**; a second failure reopens the transfer sheet via **Mở xác nhận chuyển
+  khoản**.
 - Supported transfers copy only the bank prefix, account, amount, and merchant
-  name.
-- Amounts are rounded to two decimal places of the thousands value.
-- Paste into the MB hub with a long-press; transfer content is manual.
+  name. Amounts round to two decimals of the thousands value. Paste manually with
+  a long-press; transfer content is manual.
+- Timer `0` disables auto-clear and the foreground service. A non-zero timer
+  clears on expiry or task removal. After handoff, the camera stops and shows the
+  countdown; **Quét mã khác** restarts scanning.
 
-### Clipboard
+### Demo
 
-- Timer `0` disables auto-clear and the foreground service. The clipboard stays
-  until it is overwritten or cleared manually.
-- A non-zero timer clears the clipboard on expiry or task removal.
-- After handoff, the camera stops and shows a countdown or persistent indicator;
-  **Quét mã khác** restarts scanning.
-
-### Demo behavior
-
-- Tap the version line five times in credits. Demo reflects the current clipboard
-  and confirmation settings and draws the scan-frame boundary; demo cases are
-  not filtered by that frame.
-- Demo cycles transfer, missing-MB, unsupported-bank, invalid-CRC, Wi-Fi, contact,
-  and link cases.
-- With confirmation off, handoff-ready cases only show a demo toast. Sheet actions
-  and field copies are no-ops; **Quét tiếp**, swipe down, or back closes.
+- Five taps on the version line in credits enable demo. It reflects clipboard
+  and confirmation settings and draws the frame boundary, but cases are not
+  filtered by the frame.
+- Cycles transfer, missing-MB, unsupported-bank, invalid-CRC, Wi-Fi, contact, and
+  link cases. With confirmation off, handoff-ready cases show only a toast and
+  actions are no-ops. **Quét tiếp**, swipe down, or back closes.
 
 ### Privacy
 
 - No internet permission, analytics, or background work beyond the clipboard
-  timer. Parsing is local; a link opens only when the user taps it.
+  timer. Parsing is local; links open only on tap.
 
 ## License
 
