@@ -1,5 +1,8 @@
 package vn.io.elsutm.mbqr.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.view.View
 import android.view.Window
 import androidx.compose.runtime.Composable
@@ -9,6 +12,16 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+
+/** Unwraps the activity hosting a composable's context. */
+internal fun Context.findActivity(): Activity? {
+    var current: Context = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return current as? Activity
+}
 
 /**
  * Keeps the demo status bar hidden when content is hosted in a dialog window.

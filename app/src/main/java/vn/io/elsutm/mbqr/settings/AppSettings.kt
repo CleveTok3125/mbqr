@@ -46,6 +46,7 @@ object AppSettings {
     private const val DEFAULT_LIVE_DECODE_PRESET = "FAST"
     private const val DEFAULT_STILL_DECODE_PRESET = "MAXIMUM"
     private const val DEFAULT_ANALYSIS_RESOLUTION_PRESET = "P720"
+    private const val DEFAULT_PIPELINE_STATUS_ENABLED = false
     private const val DEFAULT_CUSTOM_ANALYSIS_WIDTH = 1280
     private const val DEFAULT_CUSTOM_ANALYSIS_HEIGHT = 720
 
@@ -144,7 +145,10 @@ object AppSettings {
     }
 
     fun pipelineStatusEnabled(context: Context): Boolean =
-        preferences(context).getBoolean(PIPELINE_STATUS_ENABLED, false)
+        preferences(context).getBoolean(
+            PIPELINE_STATUS_ENABLED,
+            DEFAULT_PIPELINE_STATUS_ENABLED,
+        )
 
     fun setPipelineStatusEnabled(context: Context, enabled: Boolean) {
         preferences(context).edit { putBoolean(PIPELINE_STATUS_ENABLED, enabled) }
@@ -266,6 +270,24 @@ object AppSettings {
         val snapped = (value / step).roundToInt() * step
         return snapped.coerceIn(MIN_SCAN_FRAME_MARGIN_PERCENT, MAX_SCAN_FRAME_MARGIN_PERCENT)
     }
+
+    fun defaults(): SettingsDefaults = SettingsDefaults(
+        confirmBeforeOpeningMb = DEFAULT_CONFIRM_BEFORE_OPENING_MB,
+        clipboardExpirySeconds = DEFAULT_CLIPBOARD_EXPIRY_SECONDS,
+        scanInsideFrame = DEFAULT_SCAN_INSIDE_FRAME,
+        scanFrameMarginPercent = DEFAULT_SCAN_FRAME_MARGIN_PERCENT,
+        sensitiveMaskingLevel = DEFAULT_MASKING_LEVEL,
+        liveDecodePreset = decodePreset(DEFAULT_LIVE_DECODE_PRESET, QrDecodePreset.FAST),
+        stillDecodePreset = decodePreset(
+            DEFAULT_STILL_DECODE_PRESET,
+            QrDecodePreset.MAXIMUM,
+        ),
+        pipelineStatusEnabled = DEFAULT_PIPELINE_STATUS_ENABLED,
+        analysisResolutionPreset = analysisResolutionPreset(
+            DEFAULT_ANALYSIS_RESOLUTION_PRESET,
+        ),
+        analysisFpsPreset = AnalysisFpsPreset.fromFps(DEFAULT_ANALYSIS_FPS),
+    )
 
     private fun preferences(context: Context) =
         context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)

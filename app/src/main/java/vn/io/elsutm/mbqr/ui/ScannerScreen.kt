@@ -1,9 +1,7 @@
 package vn.io.elsutm.mbqr.ui
 
 import android.Manifest
-import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
@@ -28,7 +26,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,7 +44,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -58,7 +54,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -66,11 +61,9 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -145,7 +138,6 @@ import java.util.concurrent.Executors
 private const val MB_REDIRECT_TIMEOUT_MS = 5_000L
 private const val TRANSFER_CONTENT_TITLE = "Lệnh chuyển khoản"
 private const val RAW_CONTENT_TITLE = "Nội dung gốc"
-private const val MASKED_SENSITIVE_VALUE = "••••••••"
 
 private enum class HandoffPhase { Idle, Awaiting, Retry, Final }
 
@@ -400,6 +392,68 @@ fun ScannerScreen(
         context.stopService(Intent(context, ClipboardExpiryService::class.java))
         view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
         Toast.makeText(context, "Đã xoá clipboard", Toast.LENGTH_SHORT).show()
+    }
+
+    fun applySettingsChange(change: SettingsChange) {
+        when (change) {
+            is SettingsChange.ConfirmBeforeOpeningMb -> {
+                confirmBeforeOpeningMb = change.value
+                AppSettings.setConfirmBeforeOpeningMb(context, change.value)
+            }
+            is SettingsChange.ClipboardExpirySeconds -> clipboardExpirySeconds = change.value
+            SettingsChange.CommitClipboardExpiry -> commitClipboardExpiry(clipboardExpirySeconds)
+            is SettingsChange.ScanInsideFrame -> {
+                scanInsideFrame = change.value
+                AppSettings.setScanInsideFrame(context, change.value)
+            }
+            is SettingsChange.ScanFrameMarginPercent -> scanFrameMarginPercent = change.value
+            SettingsChange.CommitScanFrameMargin -> {
+                AppSettings.setScanFrameMarginPercent(context, scanFrameMarginPercent)
+            }
+            is SettingsChange.SensitiveMaskingLevel -> {
+                sensitiveMaskingLevel = change.value
+                AppSettings.setSensitiveMaskingLevel(context, change.value)
+            }
+            is SettingsChange.LiveDecodePreset -> {
+                liveDecodePreset = change.value
+                AppSettings.setLiveDecodePreset(context, change.value)
+            }
+            is SettingsChange.StillDecodePreset -> {
+                stillDecodePreset = change.value
+                AppSettings.setStillDecodePreset(context, change.value)
+            }
+            is SettingsChange.PipelineStatusEnabled -> {
+                pipelineStatusEnabled = change.value
+                if (!change.value) pipelineStatus = null
+                AppSettings.setPipelineStatusEnabled(context, change.value)
+            }
+            is SettingsChange.ResolutionPreset -> {
+                analysisResolutionPreset = change.value
+                AppSettings.setAnalysisResolutionPreset(context, change.value)
+            }
+            is SettingsChange.FpsPreset -> {
+                analysisFpsPreset = change.value
+                AppSettings.setAnalysisFpsPreset(context, change.value)
+            }
+        }
+    }
+
+    fun restoreDefaultSettings() {
+        val defaults = AppSettings.defaults()
+        listOf(
+            SettingsChange.ConfirmBeforeOpeningMb(defaults.confirmBeforeOpeningMb),
+            SettingsChange.ClipboardExpirySeconds(defaults.clipboardExpirySeconds),
+            SettingsChange.CommitClipboardExpiry,
+            SettingsChange.ScanInsideFrame(defaults.scanInsideFrame),
+            SettingsChange.ScanFrameMarginPercent(defaults.scanFrameMarginPercent),
+            SettingsChange.CommitScanFrameMargin,
+            SettingsChange.SensitiveMaskingLevel(defaults.sensitiveMaskingLevel),
+            SettingsChange.LiveDecodePreset(defaults.liveDecodePreset),
+            SettingsChange.StillDecodePreset(defaults.stillDecodePreset),
+            SettingsChange.PipelineStatusEnabled(defaults.pipelineStatusEnabled),
+            SettingsChange.ResolutionPreset(defaults.analysisResolutionPreset),
+            SettingsChange.FpsPreset(defaults.analysisFpsPreset),
+        ).forEach { change -> applySettingsChange(change) }
     }
 
     fun showSheet(raw: String, reason: String) {
@@ -780,7 +834,9 @@ fun ScannerScreen(
                                 CameraPreview(
                                     modifier = Modifier.fillMaxSize(),
                                     torchOn = torchOn,
-                                    scanningEnabled = scanningEnabled,
+                                    // Pause decoding so a QR cannot open a sheet under the
+                                    // settings screen.
+                                    scanningEnabled = scanningEnabled && !showSettings,
                                     onDecoded = ::handleDecoded,
                                     onCameraError = { message -> cameraError = message },
                                     onCameraBound = { camera = it },
@@ -887,6 +943,44 @@ fun ScannerScreen(
                         }
                     }
                 }
+
+            }
+            if (showSettings) {
+                SettingsScreen(
+                    values = SettingsSnapshot(
+                        confirmBeforeOpeningMb = confirmBeforeOpeningMb,
+                        clipboardExpirySeconds = clipboardExpirySeconds,
+                        scanInsideFrame = scanInsideFrame,
+                        scanFrameMarginPercent = scanFrameMarginPercent,
+                        sensitiveMaskingLevel = sensitiveMaskingLevel,
+                        liveDecodePreset = liveDecodePreset,
+                        stillDecodePreset = stillDecodePreset,
+                        pipelineStatusEnabled = pipelineStatusEnabled,
+                        analysisResolutionPreset = analysisResolutionPreset,
+                        customAnalysisSize = customAnalysisSize,
+                        analysisFpsPreset = analysisFpsPreset,
+                        customAnalysisFps = customAnalysisFps,
+                    ),
+                    defaults = AppSettings.defaults(),
+                    supportedAnalysisSizes = supportedAnalysisSizes,
+                    maxFps = fpsSupport.maxFps,
+                    fpsKnown = fpsSupport.known,
+                    onValueChange = ::applySettingsChange,
+                    onEditCustomResolution = {
+                        customResolutionWidth = customAnalysisSize.width.toString()
+                        customResolutionHeight = customAnalysisSize.height.toString()
+                        customResolutionError = null
+                        showCustomResolutionDialog = true
+                    },
+                    onEditCustomFps = {
+                        customFpsInput = customAnalysisFps.toString()
+                        customFpsError = null
+                        showCustomFpsDialog = true
+                    },
+                    onOpenCredits = { showCredits = true },
+                    onRestoreDefaults = ::restoreDefaultSettings,
+                    onClose = { showSettings = false },
+                )
             }
         }
     }
@@ -1042,133 +1136,6 @@ fun ScannerScreen(
         }
     }
 
-    if (showSettings) {
-        AlertDialog(
-            onDismissRequest = { showSettings = false },
-            title = { Text("Cài đặt") },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    HideDialogStatusBar(demoMode)
-                    SensitiveMaskingLevelSetting(
-                        level = sensitiveMaskingLevel,
-                        onLevelChange = { level ->
-                            sensitiveMaskingLevel = level
-                            AppSettings.setSensitiveMaskingLevel(context, level)
-                        },
-                    )
-                    DecodePresetSetting(
-                        label = "Preset camera trực tiếp",
-                        selected = liveDecodePreset,
-                        onSelect = { preset ->
-                            liveDecodePreset = preset
-                            AppSettings.setLiveDecodePreset(context, preset)
-                        },
-                    )
-                    DecodePresetSetting(
-                        label = "Preset ảnh",
-                        selected = stillDecodePreset,
-                        onSelect = { preset ->
-                            stillDecodePreset = preset
-                            AppSettings.setStillDecodePreset(context, preset)
-                        },
-                    )
-                    AnalysisResolutionSetting(
-                        selected = analysisResolutionPreset,
-                        custom = customAnalysisSize,
-                        supported = supportedAnalysisSizes,
-                        onSelect = { preset ->
-                            analysisResolutionPreset = preset
-                            AppSettings.setAnalysisResolutionPreset(context, preset)
-                        },
-                        onCustomClick = {
-                            customResolutionWidth = customAnalysisSize.width.toString()
-                            customResolutionHeight = customAnalysisSize.height.toString()
-                            customResolutionError = null
-                            showCustomResolutionDialog = true
-                        },
-                    )
-                    AnalysisFpsSetting(
-                        selected = analysisFpsPreset,
-                        custom = customAnalysisFps,
-                        maxFps = fpsSupport.maxFps,
-                        onSelect = { preset ->
-                            analysisFpsPreset = preset
-                            AppSettings.setAnalysisFpsPreset(context, preset)
-                        },
-                        onCustomClick = {
-                            customFpsInput = customAnalysisFps.toString()
-                            customFpsError = null
-                            showCustomFpsDialog = true
-                        },
-                    )
-                    SettingsToggle(
-                        label = "Hiển thị trạng thái xử lý pipeline",
-                        checked = pipelineStatusEnabled,
-                        onCheckedChange = { enabled ->
-                            pipelineStatusEnabled = enabled
-                            if (!enabled) pipelineStatus = null
-                            AppSettings.setPipelineStatusEnabled(context, enabled)
-                        },
-                    )
-                    SettingsToggle(
-                        label = "Hiện bảng xác nhận trước khi mở MB Bank",
-                        checked = confirmBeforeOpeningMb,
-                        onCheckedChange = { enabled ->
-                            confirmBeforeOpeningMb = enabled
-                            AppSettings.setConfirmBeforeOpeningMb(context, enabled)
-                        },
-                    )
-                    SettingsToggle(
-                        label = "Chỉ quét QR trong khung",
-                        checked = scanInsideFrame,
-                        onCheckedChange = { enabled ->
-                            scanInsideFrame = enabled
-                            AppSettings.setScanInsideFrame(context, enabled)
-                        },
-                    )
-                    if (scanInsideFrame) {
-                        ScanFrameMarginSetting(
-                            percent = scanFrameMarginPercent,
-                            onPercentChange = { percent ->
-                                scanFrameMarginPercent = percent
-                            },
-                            onPercentChangeFinished = {
-                                AppSettings.setScanFrameMarginPercent(
-                                    context,
-                                    scanFrameMarginPercent,
-                                )
-                            },
-                        )
-                    }
-                    ClipboardExpirySetting(
-                        seconds = clipboardExpirySeconds,
-                        onSecondsChange = { seconds -> clipboardExpirySeconds = seconds },
-                        onSecondsChangeFinished = {
-                            commitClipboardExpiry(clipboardExpirySeconds)
-                        },
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showSettings = false
-                        showCredits = true
-                    },
-                ) {
-                    Text("Thông tin")
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSettings = false }) {
-                    Text("Đóng")
-                }
-            },
-        )
-    }
 
     if (showCustomResolutionDialog) {
         AlertDialog(
@@ -1482,15 +1449,6 @@ private fun ParsedQrSheetContent(
     }
 }
 
-private fun isMaskingActive(
-    sensitivity: QrFieldSensitivity,
-    maskingLevel: Int,
-): Boolean = when (sensitivity) {
-    QrFieldSensitivity.None -> false
-    QrFieldSensitivity.Personal -> maskingLevel >= AppSettings.MASKING_FULL
-    QrFieldSensitivity.Direct -> maskingLevel >= AppSettings.MASKING_LIGHT
-}
-
 private fun hasHiddenFields(
     fields: List<QrField>,
     maskingLevel: Int,
@@ -1767,277 +1725,6 @@ private fun RawQrSheetContent(
 
 private fun formatVnd(amount: Long): String =
     NumberFormat.getNumberInstance(Locale.forLanguageTag("vi-VN")).format(amount) + " ₫"
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SensitiveMaskingLevelSetting(
-    level: Int,
-    onLevelChange: (Int) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "Mức ẩn dữ liệu nhạy cảm",
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FilterChip(
-                selected = level == AppSettings.MASKING_OFF,
-                onClick = { onLevelChange(AppSettings.MASKING_OFF) },
-                label = { Text("Tắt") },
-            )
-            FilterChip(
-                selected = level == AppSettings.MASKING_LIGHT,
-                onClick = { onLevelChange(AppSettings.MASKING_LIGHT) },
-                label = { Text("Nhẹ") },
-            )
-            FilterChip(
-                selected = level == AppSettings.MASKING_FULL,
-                onClick = { onLevelChange(AppSettings.MASKING_FULL) },
-                label = { Text("Toàn bộ") },
-            )
-        }
-    }
-}
-
-@Composable
-private fun DecodePresetSetting(
-    label: String,
-    selected: QrDecodePreset,
-    onSelect: (QrDecodePreset) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            QrDecodePreset.entries.forEach { preset ->
-                FilterChip(
-                    selected = selected == preset,
-                    onClick = { onSelect(preset) },
-                    label = { Text(preset.label()) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AnalysisResolutionSetting(
-    selected: AnalysisResolutionPreset,
-    custom: AnalysisSize,
-    supported: List<AnalysisSize>,
-    onSelect: (AnalysisResolutionPreset) -> Unit,
-    onCustomClick: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "Độ phân giải camera",
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            CameraCapabilities.fixedPresets
-                .filter { (preset, size) ->
-                    supported.isEmpty() ||
-                        CameraCapabilities.contains(supported, size) ||
-                        preset == selected
-                }
-                .forEach { (preset, size) ->
-                    FilterChip(
-                        selected = selected == preset,
-                        onClick = { onSelect(preset) },
-                        label = { Text(size.toString()) },
-                        enabled = supported.isEmpty() ||
-                            CameraCapabilities.contains(supported, size),
-                    )
-                }
-            FilterChip(
-                selected = selected == AnalysisResolutionPreset.CUSTOM,
-                onClick = onCustomClick,
-                label = {
-                    Text(
-                        if (selected == AnalysisResolutionPreset.CUSTOM) {
-                            "Tùy chỉnh ${custom.width}×${custom.height}"
-                        } else {
-                            "Tùy chỉnh"
-                        },
-                    )
-                },
-            )
-        }
-    }
-}
-
-@Composable
-private fun AnalysisFpsSetting(
-    selected: AnalysisFpsPreset,
-    custom: Int,
-    maxFps: Int,
-    onSelect: (AnalysisFpsPreset) -> Unit,
-    onCustomClick: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "FPS phân tích camera",
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            AnalysisFpsPreset.fixed
-                .filter { preset ->
-                    val fps = preset.fps ?: return@filter false
-                    fps <= maxFps || preset == selected
-                }
-                .forEach { preset ->
-                    val fps = preset.fps ?: return@forEach
-                    FilterChip(
-                        selected = selected == preset,
-                        onClick = { onSelect(preset) },
-                        label = { Text("$fps") },
-                        enabled = fps <= maxFps,
-                    )
-                }
-            FilterChip(
-                selected = selected == AnalysisFpsPreset.CUSTOM,
-                onClick = onCustomClick,
-                label = {
-                    Text(
-                        if (selected == AnalysisFpsPreset.CUSTOM) {
-                            "Tùy chỉnh $custom FPS"
-                        } else {
-                            "Tùy chỉnh"
-                        },
-                    )
-                },
-            )
-        }
-    }
-}
-
-private fun QrDecodePreset.label(): String = when (this) {
-    QrDecodePreset.FAST -> "Nhanh"
-    QrDecodePreset.MAXIMUM -> "Tối đa"
-}
-
-@Composable
-private fun SettingsToggle(
-    label: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .toggleable(
-                value = checked,
-                role = Role.Switch,
-                onValueChange = onCheckedChange,
-            )
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f),
-        )
-        Switch(checked = checked, onCheckedChange = null)
-    }
-}
-
-@Composable
-private fun ScanFrameMarginSetting(
-    percent: Int,
-    onPercentChange: (Int) -> Unit,
-    onPercentChangeFinished: () -> Unit,
-) {
-    val maxPercent = AppSettings.MAX_SCAN_FRAME_MARGIN_PERCENT
-    val stepPercent = AppSettings.SCAN_FRAME_MARGIN_STEP_PERCENT
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Lề vùng quét",
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Text(
-                text = "$percent%",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Slider(
-            value = percent.toFloat(),
-            onValueChange = { value ->
-                onPercentChange(AppSettings.snappedScanFrameMarginPercent(value))
-            },
-            onValueChangeFinished = onPercentChangeFinished,
-            valueRange = 0f..maxPercent.toFloat(),
-            steps = maxPercent / stepPercent - 1,
-        )
-    }
-}
-
-@Composable
-private fun ClipboardExpirySetting(
-    seconds: Int,
-    onSecondsChange: (Int) -> Unit,
-    onSecondsChangeFinished: () -> Unit,
-) {
-    val maxSeconds = AppSettings.MAX_CLIPBOARD_EXPIRY_SECONDS
-    val stepSeconds = AppSettings.CLIPBOARD_EXPIRY_STEP_SECONDS
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Thời gian clipboard",
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Text(
-                text = if (seconds == AppSettings.CLIPBOARD_TIMER_OFF_SECONDS) {
-                    "Không tự xoá"
-                } else {
-                    "$seconds giây"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Slider(
-            value = seconds.toFloat(),
-            onValueChange = { value ->
-                onSecondsChange(AppSettings.snappedSliderExpirySeconds(value))
-            },
-            onValueChangeFinished = onSecondsChangeFinished,
-            valueRange = 0f..maxSeconds.toFloat(),
-            steps = maxSeconds / stepSeconds - 1,
-        )
-    }
-}
 
 @Composable
 private fun CreditsContent(
@@ -2499,15 +2186,6 @@ private fun decodeCapturedImage(
         source,
         onPipelineStatus,
     )
-}
-
-private fun Context.findActivity(): Activity? {
-    var current: Context = this
-    while (current is ContextWrapper) {
-        if (current is Activity) return current
-        current = current.baseContext
-    }
-    return current as? Activity
 }
 
 private val TorchOnContainer = Color(0xFFFFC107)

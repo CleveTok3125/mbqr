@@ -105,20 +105,27 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 
 ## Controls
 
-- **Cài đặt**: sensitive-data masking level `0` off, `1` light, `2` full
-  (default `0`); confirmation; scan-inside-frame with margin `0–100%` (default
-  `50`); clipboard expiry `0` = off, otherwise `15–300s` in 15s steps (default
-  `60`). **Thông tin** opens credits, version, source, and license.
+- **Cài đặt**: full-screen screen with four groups: Quét, Chuyển khoản,
+  Riêng tư, Hiệu năng camera. Masking level `0` off, `1` light, `2` full
+  (default `0`) with a live field preview; confirmation for opening MB Bank;
+  scan-inside-frame with margin `0–100%` (default `50`) and a frame preview;
+  clipboard expiry `0` = off, otherwise `15–300s` in 15s steps (default `60`).
+  Rows that differ from the factory value expose a **Mặc định** action. The
+  overflow menu holds **Thông tin** (credits, version, source, license) and
+  **Khôi phục mặc định**.
+- **Hiệu năng camera**: **Quét trực tiếp** expands to decode preset, analysis
+  resolution, and frame rate; **Quét ảnh** expands to the still-image preset.
+  Collapsed rows show the current resolution and frame rate.
 - **Preset giải mã**: live camera and still images have independent
   `Nhanh` / `Tối đa` presets. Defaults are `Nhanh` for live and `Tối đa` for
   images.
-- **Độ phân giải camera**: independent from presets. Default is `1280×720`;
-  fixed sizes are `640×480` / `1280×720` / `1920×1080`, plus `Tùy chỉnh` with an
-  exact camera-supported width/height. If the selected size is unavailable,
-  CameraX uses the closest supported size.
-- **FPS phân tích camera**: default `24`. Fixed `10 / 24 / 30 / 60` options;
-  values above the selected resolution's sensor limit are disabled; custom
-  accepts `1–max` FPS. The analyzer throttles to the selected rate.
+- **Độ phân giải**: independent from presets. Default is `1280×720`;
+  fixed sizes are `480p` / `720p` / `1080p`, plus `Khác` with an exact
+  camera-supported width/height. If the selected size is unavailable, CameraX
+  uses the closest supported size.
+- **Tốc độ**: default `24` FPS. Fixed `10 / 24 / 30 / 60` options; values above
+  the selected resolution's sensor limit are disabled; `Khác` accepts `1–max`
+  FPS. The analyzer throttles to the selected rate.
 - **Pipeline status**: optional overlay, off by default, showing the current
   decode stage, source, preset, elapsed time, and result. It is visible only
   while a decode pipeline runs.

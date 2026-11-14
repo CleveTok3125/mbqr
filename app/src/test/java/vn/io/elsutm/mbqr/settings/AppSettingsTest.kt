@@ -106,4 +106,36 @@ class AppSettingsTest {
         assertEquals(AppSettings.MASKING_FULL, AppSettings.boundedMaskingLevel(2))
         assertEquals(AppSettings.MASKING_FULL, AppSettings.boundedMaskingLevel(3))
     }
+
+    @Test
+    fun `defaults expose the documented values`() {
+        val defaults = AppSettings.defaults()
+        assertEquals(true, defaults.confirmBeforeOpeningMb)
+        assertEquals(60, defaults.clipboardExpirySeconds)
+        assertEquals(false, defaults.scanInsideFrame)
+        assertEquals(50, defaults.scanFrameMarginPercent)
+        assertEquals(AppSettings.MASKING_OFF, defaults.sensitiveMaskingLevel)
+        assertEquals(QrDecodePreset.FAST, defaults.liveDecodePreset)
+        assertEquals(QrDecodePreset.MAXIMUM, defaults.stillDecodePreset)
+        assertEquals(false, defaults.pipelineStatusEnabled)
+        assertEquals(AnalysisResolutionPreset.P720, defaults.analysisResolutionPreset)
+        assertEquals(AnalysisFpsPreset.FPS_24, defaults.analysisFpsPreset)
+    }
+
+    @Test
+    fun `defaults survive the bounding rules`() {
+        val defaults = AppSettings.defaults()
+        assertEquals(
+            defaults.clipboardExpirySeconds,
+            AppSettings.boundedExpirySeconds(defaults.clipboardExpirySeconds),
+        )
+        assertEquals(
+            defaults.scanFrameMarginPercent,
+            AppSettings.boundedScanFrameMarginPercent(defaults.scanFrameMarginPercent),
+        )
+        assertEquals(
+            defaults.sensitiveMaskingLevel,
+            AppSettings.boundedMaskingLevel(defaults.sensitiveMaskingLevel),
+        )
+    }
 }
