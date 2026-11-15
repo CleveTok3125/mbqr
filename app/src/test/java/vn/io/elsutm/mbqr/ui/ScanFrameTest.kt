@@ -9,6 +9,11 @@ import vn.io.elsutm.mbqr.settings.ScanFrameStyle
 class ScanFrameTest {
 
     @Test
+    fun `uses one frame stroke width across styles`() {
+        assertEquals(4.dp, ScanFrameStrokeWidth)
+    }
+
+    @Test
     fun `rounds only the rounded frame style`() {
         assertEquals(11, scanFrameCornerPercent(ScanFrameStyle.ROUNDED))
         assertEquals(0, scanFrameCornerPercent(ScanFrameStyle.CORNERS))

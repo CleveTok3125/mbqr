@@ -19,6 +19,9 @@ import kotlin.math.min
 internal fun scanMargin(minGap: Dp, percent: Int): Dp =
     minGap * (percent.coerceIn(0, 100) / 100f)
 
+/** Stroke width shared by every scan frame style. */
+internal val ScanFrameStrokeWidth = 4.dp
+
 /** Stroke and dash pattern shared by the preview and the scanner overlay. */
 internal val ScanBoundaryStrokeWidth = 1.dp
 internal val ScanBoundaryDashOn = 8.dp
@@ -50,20 +53,20 @@ internal fun ScanFrameOutline(
     when (style) {
         ScanFrameStyle.ROUNDED -> Box(
             modifier = modifier.border(
-                width = 3.dp,
+                width = ScanFrameStrokeWidth,
                 color = color,
                 shape = RoundedCornerShape(percent = scanFrameCornerPercent(style)),
             ),
         )
         ScanFrameStyle.SQUARE -> Box(
-            modifier = modifier.border(width = 3.dp, color = color),
+            modifier = modifier.border(width = ScanFrameStrokeWidth, color = color),
         )
         ScanFrameStyle.CORNERS -> Canvas(modifier = modifier) {
             val arm = scanFrameArmLength(
                 edgePx = min(size.width, size.height),
                 maxArmPx = 32.dp.toPx(),
             )
-            val stroke = 4.dp.toPx()
+            val stroke = ScanFrameStrokeWidth.toPx()
             val cap = StrokeCap.Round
             // Keep the stroke fully inside the frame bounds.
             val inset = stroke / 2f
