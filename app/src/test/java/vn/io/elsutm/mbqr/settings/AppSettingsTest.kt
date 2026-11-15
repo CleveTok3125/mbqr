@@ -1,6 +1,7 @@
 package vn.io.elsutm.mbqr.settings
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AppSettingsTest {
@@ -140,6 +141,17 @@ class AppSettingsTest {
         assertEquals(true, defaults.hapticsEnabled)
         assertEquals(ScanFrameStyle.ROUNDED, defaults.scanFrameStyle)
         assertEquals(ScanBoundaryStyle.ROUNDED, defaults.scanBoundaryStyle)
+        assertEquals(true, defaults.preferVietQrLink)
+        assertEquals(LinkBrowserMode.CUSTOM_TAB, defaults.linkBrowserMode)
+        assertNull(defaults.browserPackage)
+    }
+
+    @Test
+    fun `maps link browser mode names with a custom tab fallback`() {
+        assertEquals(LinkBrowserMode.CUSTOM_TAB, LinkBrowserMode.fromName(null))
+        assertEquals(LinkBrowserMode.CUSTOM_TAB, LinkBrowserMode.fromName("UNKNOWN"))
+        assertEquals(LinkBrowserMode.CUSTOM_TAB, LinkBrowserMode.fromName("CUSTOM_TAB"))
+        assertEquals(LinkBrowserMode.BROWSER_APP, LinkBrowserMode.fromName("BROWSER_APP"))
     }
 
     @Test

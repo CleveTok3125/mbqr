@@ -3,11 +3,12 @@ package vn.io.elsutm.mbqr.ui
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,18 +60,26 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import vn.io.elsutm.mbqr.R
 import vn.io.elsutm.mbqr.camera.CameraCapabilities
+import vn.io.elsutm.mbqr.handoff.BrowserOption
 import vn.io.elsutm.mbqr.qr.QrFieldSensitivity
 import vn.io.elsutm.mbqr.settings.AnalysisFpsPreset
 import vn.io.elsutm.mbqr.settings.AnalysisResolutionPreset
 import vn.io.elsutm.mbqr.settings.AnalysisSize
 import vn.io.elsutm.mbqr.settings.AppSettings
+import vn.io.elsutm.mbqr.settings.LinkBrowserMode
 import vn.io.elsutm.mbqr.settings.QrDecodePreset
 import vn.io.elsutm.mbqr.settings.ScanBoundaryStyle
 import vn.io.elsutm.mbqr.settings.ScanFrameStyle
@@ -93,6 +104,9 @@ internal data class SettingsSnapshot(
     val customAnalysisSize: AnalysisSize,
     val analysisFpsPreset: AnalysisFpsPreset,
     val customAnalysisFps: Int,
+    val preferVietQrLink: Boolean,
+    val linkBrowserMode: LinkBrowserMode,
+    val browserPackage: String?,
 ) {
     val analysisFps: Int get() = analysisFpsPreset.fps ?: customAnalysisFps
 }
@@ -116,6 +130,9 @@ internal sealed interface SettingsChange {
     data class BoundaryStyle(val value: ScanBoundaryStyle) : SettingsChange
     data class ResolutionPreset(val value: AnalysisResolutionPreset) : SettingsChange
     data class FpsPreset(val value: AnalysisFpsPreset) : SettingsChange
+    data class PreferVietQrLink(val value: Boolean) : SettingsChange
+    data class LinkBrowserModeChange(val value: LinkBrowserMode) : SettingsChange
+    data class BrowserPackage(val value: String?) : SettingsChange
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -123,6 +140,7 @@ internal sealed interface SettingsChange {
 internal fun SettingsScreen(
     values: SettingsSnapshot,
     defaults: SettingsDefaults,
+    browsers: List<BrowserOption>,
     supportedAnalysisSizes: List<AnalysisSize>,
     maxFps: Int,
     fpsKnown: Boolean,
@@ -358,6 +376,57 @@ internal fun SettingsScreen(
                             onValueChange(SettingsChange.ConfirmBeforeOpeningMb(it))
                         },
                     )
+                    ToggleSetting(
+                        title = "Ưu tiên VietQR",
+                        checked = values.preferVietQrLink,
+                        resetVisible = values.preferVietQrLink != defaults.preferVietQrLink,
+                        onReset = {
+                            onValueChange(
+                                SettingsChange.PreferVietQrLink(defaults.preferVietQrLink),
+                            )
+                        },
+                        onCheckedChange = {
+                            onValueChange(SettingsChange.PreferVietQrLink(it))
+                        },
+                    )
+                    ChoiceSetting(
+                        title = "Mở liên kết bằng",
+                        options = LinkBrowserMode.entries,
+                        selected = values.linkBrowserMode,
+                        label = { it.label() },
+                        enabled = values.preferVietQrLink,
+                        resetVisible = values.linkBrowserMode != defaults.linkBrowserMode,
+                        onReset = {
+                            onValueChange(
+                                SettingsChange.LinkBrowserModeChange(defaults.linkBrowserMode),
+                            )
+                        },
+                        onSelect = {
+                            onValueChange(SettingsChange.LinkBrowserModeChange(it))
+                        },
+                    )
+                    if (browsers.isNotEmpty()) {
+                        val selectedBrowser = browsers
+                            .firstOrNull { it.packageName == values.browserPackage }
+                            ?: browsers.first()
+                        ChoiceSetting(
+                            title = "Trình duyệt",
+                            options = browsers,
+                            selected = selectedBrowser,
+                            label = { it.label },
+                            enabled = values.preferVietQrLink &&
+                                values.linkBrowserMode == LinkBrowserMode.BROWSER_APP,
+                            resetVisible = values.browserPackage != defaults.browserPackage,
+                            onReset = {
+                                onValueChange(
+                                    SettingsChange.BrowserPackage(defaults.browserPackage),
+                                )
+                            },
+                            onSelect = {
+                                onValueChange(SettingsChange.BrowserPackage(it.packageName))
+                            },
+                        )
+                    }
                 }
 
                 SettingsSection(
@@ -742,6 +811,86 @@ private fun ToggleSetting(
     }
 }
 
+private data class SegmentedOption<T>(
+    val value: T,
+    val label: String,
+    val enabled: Boolean = true,
+    val onClick: () -> Unit,
+)
+
+// The segmented button keeps space for its icon slot even when the icon is empty.
+private val SegmentedButtonIconSpacing = 8.dp
+
+/**
+ * Renders one segmented choice row.
+ *
+ * Each button is sized to its label, plus content padding, with a 48dp floor.
+ * When the intrinsic widths exceed the row width, the row caps at that width
+ * and buttons share it proportionally, so long labels get more space and
+ * marquee within their slot.
+ */
+@Composable
+private fun <T> ProportionalSegmentedRow(
+    options: List<SegmentedOption<T>>,
+    selected: T,
+) {
+    if (options.isEmpty()) return
+
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val density = LocalDensity.current
+        val layoutDirection = LocalLayoutDirection.current
+        val textMeasurer = rememberTextMeasurer()
+        val labelStyle = MaterialTheme.typography.labelLarge
+        val contentPadding = SegmentedButtonDefaults.ContentPadding
+        val horizontalPadding = contentPadding.calculateLeftPadding(layoutDirection) +
+            contentPadding.calculateRightPadding(layoutDirection)
+        val intrinsicWidths = options.map { option ->
+            val textWidth = with(density) {
+                textMeasurer.measure(
+                    text = option.label,
+                    style = labelStyle,
+                    maxLines = 1,
+                    softWrap = false,
+                ).size.width.toDp()
+            }
+            (textWidth + horizontalPadding + SegmentedButtonIconSpacing)
+                .coerceAtLeast(48.dp)
+        }
+        val totalWidth = intrinsicWidths.fold(0.dp) { sum, width -> sum + width }
+        val fitsRow = totalWidth <= maxWidth
+
+        SingleChoiceSegmentedButtonRow(
+            modifier = if (fitsRow) {
+                Modifier.widthIn(max = maxWidth)
+            } else {
+                Modifier.fillMaxWidth()
+            },
+        ) {
+            options.forEachIndexed { index, option ->
+                SegmentedButton(
+                    selected = option.value == selected,
+                    onClick = option.onClick,
+                    enabled = option.enabled,
+                    modifier = if (fitsRow) {
+                        Modifier.width(intrinsicWidths[index])
+                    } else {
+                        Modifier.weight(intrinsicWidths[index].value)
+                    },
+                    shape = SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = options.size,
+                    ),
+                    icon = {},
+                    contentPadding = contentPadding,
+                    label = {
+                        ChoiceOptionLabel(option.label, labelStyle)
+                    },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun <T> ChoiceSetting(
     title: String,
@@ -764,25 +913,33 @@ private fun <T> ChoiceSetting(
             resetVisible = resetVisible,
             onReset = onReset,
         )
-        Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            SingleChoiceSegmentedButtonRow {
-                options.forEachIndexed { index, option ->
-                    SegmentedButton(
-                        selected = option == selected,
-                        onClick = { onSelect(option) },
-                        enabled = enabled,
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = options.size,
-                        ),
-                        label = {
-                            Text(text = label(option), maxLines = 1)
-                        },
-                    )
-                }
-            }
-        }
+        ProportionalSegmentedRow(
+            options = options.map { option ->
+                SegmentedOption(
+                    value = option,
+                    label = label(option),
+                    enabled = enabled,
+                    onClick = { onSelect(option) },
+                )
+            },
+            selected = selected,
+        )
     }
+}
+
+@Composable
+private fun ChoiceOptionLabel(text: String, style: TextStyle) {
+    Text(
+        text = text,
+        style = style,
+        maxLines = 1,
+        softWrap = false,
+        textAlign = TextAlign.Center,
+        overflow = TextOverflow.Clip,
+        modifier = Modifier
+            .fillMaxWidth()
+            .basicMarquee(),
+    )
 }
 
 @Composable
@@ -819,7 +976,18 @@ private fun ResolutionSetting(
             CameraCapabilities.contains(supported, size) ||
             preset == selected
     }
-    val optionCount = presets.size + 1
+    val options = presets.map { (preset, size) ->
+        SegmentedOption(
+            value = preset,
+            label = size.shortLabel(),
+            enabled = supported.isEmpty() || CameraCapabilities.contains(supported, size),
+            onClick = { onSelect(preset) },
+        )
+    } + SegmentedOption(
+        value = AnalysisResolutionPreset.CUSTOM,
+        label = "Khác",
+        onClick = onCustomClick,
+    )
 
     Column(
         modifier = Modifier
@@ -833,32 +1001,7 @@ private fun ResolutionSetting(
             resetVisible = resetVisible,
             onReset = onReset,
         )
-        Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            SingleChoiceSegmentedButtonRow {
-                presets.forEachIndexed { index, (preset, size) ->
-                    SegmentedButton(
-                        selected = selected == preset,
-                        onClick = { onSelect(preset) },
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = optionCount,
-                        ),
-                        enabled = supported.isEmpty() ||
-                            CameraCapabilities.contains(supported, size),
-                        label = { Text(text = size.shortLabel(), maxLines = 1) },
-                    )
-                }
-                SegmentedButton(
-                    selected = selected == AnalysisResolutionPreset.CUSTOM,
-                    onClick = onCustomClick,
-                    shape = SegmentedButtonDefaults.itemShape(
-                        index = optionCount - 1,
-                        count = optionCount,
-                    ),
-                    label = { Text(text = "Khác", maxLines = 1) },
-                )
-            }
-        }
+        ProportionalSegmentedRow(options = options, selected = selected)
     }
 }
 
@@ -878,7 +1021,19 @@ private fun FpsSetting(
         val presetFps = preset.fps ?: return@filter false
         presetFps <= maxFps || preset == selected
     }
-    val optionCount = presets.size + 1
+    val options = presets.mapNotNull { preset ->
+        val presetFps = preset.fps ?: return@mapNotNull null
+        SegmentedOption(
+            value = preset,
+            label = "$presetFps",
+            enabled = presetFps <= maxFps,
+            onClick = { onSelect(preset) },
+        )
+    } + SegmentedOption(
+        value = AnalysisFpsPreset.CUSTOM,
+        label = "Khác",
+        onClick = onCustomClick,
+    )
 
     Column(
         modifier = Modifier
@@ -892,32 +1047,7 @@ private fun FpsSetting(
             resetVisible = resetVisible,
             onReset = onReset,
         )
-        Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            SingleChoiceSegmentedButtonRow {
-                presets.forEachIndexed { index, preset ->
-                    val presetFps = preset.fps ?: return@forEachIndexed
-                    SegmentedButton(
-                        selected = selected == preset,
-                        onClick = { onSelect(preset) },
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = optionCount,
-                        ),
-                        enabled = presetFps <= maxFps,
-                        label = { Text(text = "$presetFps", maxLines = 1) },
-                    )
-                }
-                SegmentedButton(
-                    selected = selected == AnalysisFpsPreset.CUSTOM,
-                    onClick = onCustomClick,
-                    shape = SegmentedButtonDefaults.itemShape(
-                        index = optionCount - 1,
-                        count = optionCount,
-                    ),
-                    label = { Text(text = "Khác", maxLines = 1) },
-                )
-            }
-        }
+        ProportionalSegmentedRow(options = options, selected = selected)
         if (fpsKnown && fps > maxFps) {
             Text(
                 text = "Camera chỉ chạy tối đa $maxFps FPS.",
@@ -971,7 +1101,7 @@ private fun ScanFrameMarginSetting(
         }
         if (!enabled) {
             Text(
-                text = "Bật “Chỉ quét trong khung” để chỉnh lề.",
+                text = "Cần bật “Chỉ quét trong khung”.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1204,6 +1334,11 @@ internal fun ScanFrameStyle.label(): String = when (this) {
 internal fun ScanBoundaryStyle.label(): String = when (this) {
     ScanBoundaryStyle.ROUNDED -> "Bo góc"
     ScanBoundaryStyle.SQUARE -> "Vuông"
+}
+
+internal fun LinkBrowserMode.label(): String = when (this) {
+    LinkBrowserMode.CUSTOM_TAB -> "Tab mặc định"
+    LinkBrowserMode.BROWSER_APP -> "Ứng dụng trình duyệt"
 }
 
 internal fun AnalysisSize.shortLabel(): String = "${height}p"

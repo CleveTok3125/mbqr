@@ -17,4 +17,7 @@ data class SettingsDefaults(
     val scanBoundaryStyle: ScanBoundaryStyle,
     val analysisResolutionPreset: AnalysisResolutionPreset,
     val analysisFpsPreset: AnalysisFpsPreset,
+    val preferVietQrLink: Boolean,
+    val linkBrowserMode: LinkBrowserMode,
+    val browserPackage: String?,
 )

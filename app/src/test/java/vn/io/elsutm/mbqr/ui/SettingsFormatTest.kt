@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import vn.io.elsutm.mbqr.settings.AnalysisResolutionPreset
 import vn.io.elsutm.mbqr.settings.AnalysisSize
+import vn.io.elsutm.mbqr.settings.LinkBrowserMode
 import vn.io.elsutm.mbqr.settings.ScanBoundaryStyle
 import vn.io.elsutm.mbqr.settings.ScanFrameStyle
 
@@ -57,6 +58,12 @@ class SettingsFormatTest {
     fun `labels the scan boundary styles`() {
         assertEquals("Bo góc", ScanBoundaryStyle.ROUNDED.label())
         assertEquals("Vuông", ScanBoundaryStyle.SQUARE.label())
+    }
+
+    @Test
+    fun `labels the link browser modes`() {
+        assertEquals("Tab mặc định", LinkBrowserMode.CUSTOM_TAB.label())
+        assertEquals("Ứng dụng trình duyệt", LinkBrowserMode.BROWSER_APP.label())
     }
 
     @Test

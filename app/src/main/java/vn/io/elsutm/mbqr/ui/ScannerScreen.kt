@@ -112,6 +112,8 @@ import vn.io.elsutm.mbqr.camera.QrPipelineSource
 import vn.io.elsutm.mbqr.camera.QrPipelineStage
 import vn.io.elsutm.mbqr.camera.QrPipelineStatus
 import vn.io.elsutm.mbqr.camera.ScanCrop
+import vn.io.elsutm.mbqr.handoff.BrowserCatalog
+import vn.io.elsutm.mbqr.handoff.BrowserLauncher
 import vn.io.elsutm.mbqr.handoff.ClipboardHandoff
 import vn.io.elsutm.mbqr.handoff.ClipboardSession
 import vn.io.elsutm.mbqr.handoff.MbLauncher
@@ -133,12 +135,15 @@ import vn.io.elsutm.mbqr.settings.ScanFrameStyle
 import vn.io.elsutm.mbqr.vietqr.BankDirectory
 import vn.io.elsutm.mbqr.vietqr.TransferBuilder
 import vn.io.elsutm.mbqr.vietqr.VietQrData
+import vn.io.elsutm.mbqr.vietqr.VietQrPayLinkBuilder
+import vn.io.elsutm.mbqr.vietqr.VietQrPayLinkResult
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.concurrent.Executors
 
 private const val MB_REDIRECT_TIMEOUT_MS = 5_000L
 private const val TRANSFER_CONTENT_TITLE = "Lệnh chuyển khoản"
+private const val LINK_CONTENT_TITLE = "Liên kết VietQR"
 private const val RAW_CONTENT_TITLE = "Nội dung gốc"
 
 private enum class HandoffPhase { Idle, Awaiting, Retry, Final }
@@ -179,6 +184,10 @@ fun ScannerScreen(
     var confirmBeforeOpeningMb by remember {
         mutableStateOf(AppSettings.confirmBeforeOpeningMb(context))
     }
+    var preferVietQrLink by remember { mutableStateOf(AppSettings.preferVietQrLink(context)) }
+    var linkBrowserMode by remember { mutableStateOf(AppSettings.linkBrowserMode(context)) }
+    var browserPackage by remember { mutableStateOf(AppSettings.browserPackage(context)) }
+    var handoffWasLink by rememberSaveable { mutableStateOf(false) }
     var clipboardExpirySeconds by remember {
         mutableStateOf(AppSettings.clipboardExpirySeconds(context))
     }
@@ -224,6 +233,13 @@ fun ScannerScreen(
     var showCustomFpsDialog by rememberSaveable { mutableStateOf(false) }
     var customFpsInput by rememberSaveable { mutableStateOf("") }
     var customFpsError by rememberSaveable { mutableStateOf<String?>(null) }
+    val browserOptions = remember(showSettings, browserPackage) {
+        if (showSettings) {
+            BrowserCatalog.options(context, browserPackage)
+        } else {
+            emptyList()
+        }
+    }
     val supportedAnalysisSizes = remember(cameraGranted) {
         CameraCapabilities.supportedSizes(context)
     }
@@ -468,6 +484,18 @@ fun ScannerScreen(
                 analysisFpsPreset = change.value
                 AppSettings.setAnalysisFpsPreset(context, change.value)
             }
+            is SettingsChange.PreferVietQrLink -> {
+                preferVietQrLink = change.value
+                AppSettings.setPreferVietQrLink(context, change.value)
+            }
+            is SettingsChange.LinkBrowserModeChange -> {
+                linkBrowserMode = change.value
+                AppSettings.setLinkBrowserMode(context, change.value)
+            }
+            is SettingsChange.BrowserPackage -> {
+                browserPackage = change.value
+                AppSettings.setBrowserPackage(context, change.value)
+            }
         }
     }
 
@@ -491,6 +519,9 @@ fun ScannerScreen(
             SettingsChange.BoundaryStyle(defaults.scanBoundaryStyle),
             SettingsChange.ResolutionPreset(defaults.analysisResolutionPreset),
             SettingsChange.FpsPreset(defaults.analysisFpsPreset),
+            SettingsChange.PreferVietQrLink(defaults.preferVietQrLink),
+            SettingsChange.LinkBrowserModeChange(defaults.linkBrowserMode),
+            SettingsChange.BrowserPackage(defaults.browserPackage),
         ).forEach { change -> applySettingsChange(change) }
     }
 
@@ -517,6 +548,7 @@ fun ScannerScreen(
         handoffAttempt = 0
         pendingHandoffRaw = null
         pendingHandoffText = null
+        handoffWasLink = false
     }
 
     fun closeSheet() {
@@ -556,6 +588,7 @@ fun ScannerScreen(
 
         // The clipboard and timer must be ready before MB reads the paste buffer.
         scanningEnabled = false
+        handoffWasLink = false
         pendingHandoffRaw = raw
         pendingHandoffText = transferText
         copyToClipboard(transferText)
@@ -580,6 +613,25 @@ fun ScannerScreen(
         beginHandoff(pending.raw, pending.transferText)
     }
 
+    fun beginLinkHandoff(raw: String, link: String) {
+        scanningEnabled = false
+        val opened = BrowserLauncher.open(context, link, linkBrowserMode, browserPackage)
+        if (opened) {
+            handoffWasLink = true
+            pendingHandoffRaw = null
+            pendingHandoffText = null
+            handoffPhaseName = HandoffPhase.Idle.name
+            handoffAttempt = 0
+            sheetRaw = null
+            sheetRawExact = null
+            return
+        }
+
+        handoffWasLink = false
+        showSheet(raw, "Không mở được liên kết")
+        Toast.makeText(context, "Không mở được liên kết", Toast.LENGTH_SHORT).show()
+    }
+
     fun showFinalConfirmation() {
         val pending = pendingHandoff ?: return
         resetHandoff()
@@ -601,26 +653,40 @@ fun ScannerScreen(
                     return
                 }
 
-                val transferText = BankDirectory.find(data.bankBin)
-                    ?.prefix
+                val bank = BankDirectory.find(data.bankBin)
+                val transferText = bank?.prefix
                     ?.takeIf { it.isNotBlank() }
                     ?.let { TransferBuilder.build(data, it) }
+                val link = if (preferVietQrLink) {
+                    val result = VietQrPayLinkBuilder.build(data, bank)
+                    (result as? VietQrPayLinkResult.Success)?.url
+                } else {
+                    null
+                }
 
                 if (!MbLauncher.isInstalled(context)) {
                     showSheet(raw, "Chưa cài MB Bank")
                     return
                 }
 
-                if (transferText == null) {
+                if (link == null && transferText == null) {
                     showSheet(raw, "Chưa hỗ trợ ngân hàng")
                     return
                 }
 
+                if (link == null && preferVietQrLink) {
+                    Toast.makeText(
+                        context,
+                        "Thiếu thông tin VietQR, dùng Dán thông minh",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+
                 scanningEnabled = false
-                if (AppSettings.confirmBeforeOpeningMb(context)) {
-                    showSheet(raw, "Xác nhận chuyển khoản")
-                } else {
-                    beginHandoff(raw, transferText)
+                when {
+                    confirmBeforeOpeningMb -> showSheet(raw, "Xác nhận chuyển khoản")
+                    link != null -> beginLinkHandoff(raw, link)
+                    transferText != null -> beginHandoff(raw, transferText)
                 }
             }
 
@@ -789,6 +855,7 @@ fun ScannerScreen(
                     PausedContent(
                         clipboardRemaining = clipboardRemaining,
                         clipboardPersistent = clipboardPersistent,
+                        showClipboard = !handoffWasLink,
                         reminder = when (handoffPhase) {
                             HandoffPhase.Retry -> "MB Bank chưa mở?"
                             HandoffPhase.Final -> "Không mở được MB Bank. Thao tác thủ công?"
@@ -1008,8 +1075,12 @@ fun ScannerScreen(
                         customAnalysisSize = customAnalysisSize,
                         analysisFpsPreset = analysisFpsPreset,
                         customAnalysisFps = customAnalysisFps,
+                        preferVietQrLink = preferVietQrLink,
+                        linkBrowserMode = linkBrowserMode,
+                        browserPackage = browserPackage,
                     ),
                     defaults = AppSettings.defaults(),
+                    browsers = browserOptions,
                     supportedAnalysisSizes = supportedAnalysisSizes,
                     maxFps = fpsSupport.maxFps,
                     fpsKnown = fpsSupport.known,
@@ -1106,50 +1177,69 @@ fun ScannerScreen(
                             )
                         } else {
                             val data = content.data
+                            val bank = remember(data) { BankDirectory.find(data.bankBin) }
                             val transferText = remember(data) {
-                                BankDirectory.find(data.bankBin)
-                                    ?.prefix
+                                bank?.prefix
                                     ?.takeIf { it.isNotBlank() }
                                     ?.let { TransferBuilder.build(data, it) }
+                            }
+                            val link = remember(data, preferVietQrLink) {
+                                if (preferVietQrLink) {
+                                    val result = VietQrPayLinkBuilder.build(data, bank)
+                                    (result as? VietQrPayLinkResult.Success)?.url
+                                } else {
+                                    null
+                                }
                             }
                             ParsedQrSheetContent(
                                 reason = sheetReason,
                                 data = data,
-                                bankName = BankDirectory.find(data.bankBin)?.shortName,
-                                copyText = transferText ?: content.raw,
-                                copyTitle = if (transferText != null) {
-                                    TRANSFER_CONTENT_TITLE
-                                } else {
-                                    RAW_CONTENT_TITLE
+                                bankName = bank?.shortName,
+                                copyText = link ?: transferText ?: content.raw,
+                                copyTitle = when {
+                                    link != null -> LINK_CONTENT_TITLE
+                                    transferText != null -> TRANSFER_CONTENT_TITLE
+                                    else -> RAW_CONTENT_TITLE
                                 },
-                                copyMaskingActive = if (transferText != null) {
-                                    isMaskingActive(
+                                copyMaskingActive = when {
+                                    link != null -> false
+                                    transferText != null -> isMaskingActive(
                                         QrFieldSensitivity.Direct,
                                         sensitiveMaskingLevel,
                                     )
-                                } else {
-                                    rawMaskingActive(
+                                    else -> rawMaskingActive(
                                         sensitiveMaskingLevel,
                                         hasHiddenVietQrFields(data, sensitiveMaskingLevel),
                                     )
                                 },
-                                sensitiveMaskingLevel = sensitiveMaskingLevel,
-                                onOpenMb = if (transferText == null || !mbInstalled) {
-                                    null
-                                } else if (demoMode) {
-                                    ({})
+                                showCopyBlock = link == null,
+                                openLabel = if (link != null) {
+                                    "Mở liên kết VietQR"
                                 } else {
-                                    ({ beginHandoff(exactRaw, transferText) })
+                                    "Mở MB Bank"
+                                },
+                                sensitiveMaskingLevel = sensitiveMaskingLevel,
+                                onOpen = when {
+                                    link != null -> if (!mbInstalled) {
+                                        null
+                                    } else if (demoMode) {
+                                        ({})
+                                    } else {
+                                        ({ beginLinkHandoff(exactRaw, link) })
+                                    }
+                                    transferText == null || !mbInstalled -> null
+                                    demoMode -> ({})
+                                    else -> ({ beginHandoff(exactRaw, transferText) })
                                 },
                                 onCopy = if (demoMode) {
                                     ({})
                                 } else {
-                                    ({ closeSheetAndCopy(transferText ?: content.raw) })
+                                    ({ closeSheetAndCopy(link ?: transferText ?: content.raw) })
                                 },
                                 onShare = if (demoMode) {
                                     ({})
                                 } else {
-                                    ({ shareOrToast(transferText ?: content.raw) })
+                                    ({ shareOrToast(link ?: transferText ?: content.raw) })
                                 },
                                 onCopyHex = onCopyHex,
                                 onCopyBase64 = onCopyBase64,
@@ -1459,13 +1549,15 @@ private fun ParsedQrSheetContent(
     copyTitle: String,
     copyMaskingActive: Boolean,
     sensitiveMaskingLevel: Int,
-    onOpenMb: (() -> Unit)?,
+    onOpen: (() -> Unit)?,
     onCopy: () -> Unit,
     onShare: () -> Unit,
     onCopyHex: (() -> Unit)?,
     onCopyBase64: (() -> Unit)?,
     onFieldLongClick: (String) -> Unit,
     onScanAgain: () -> Unit,
+    openLabel: String = "Mở MB Bank",
+    showCopyBlock: Boolean = true,
 ) {
     Column(
         modifier = Modifier
@@ -1522,17 +1614,19 @@ private fun ParsedQrSheetContent(
             }
         }
 
-        SensitiveCopyableBlock(
-            title = copyTitle,
-            value = copyText,
-            maskingActive = copyMaskingActive,
-            sensitiveMaskingLevel = sensitiveMaskingLevel,
-            maxHeight = 120.dp,
-        )
+        if (showCopyBlock) {
+            SensitiveCopyableBlock(
+                title = copyTitle,
+                value = copyText,
+                maskingActive = copyMaskingActive,
+                sensitiveMaskingLevel = sensitiveMaskingLevel,
+                maxHeight = 120.dp,
+            )
+        }
 
-        onOpenMb?.let { open ->
+        onOpen?.let { open ->
             Button(onClick = open, modifier = Modifier.fillMaxWidth()) {
-                Text("Mở MB Bank")
+                Text(openLabel)
             }
         }
 
@@ -2140,6 +2234,7 @@ private fun QrPipelineStage.label(): String = when (this) {
 private fun PausedContent(
     clipboardRemaining: Int,
     clipboardPersistent: Boolean,
+    showClipboard: Boolean,
     reminder: String?,
     openLabel: String,
     onOpen: (() -> Unit)?,
@@ -2153,43 +2248,59 @@ private fun PausedContent(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "Đã copy thông tin chuyển khoản",
+            text = if (showClipboard) {
+                "Đã copy thông tin chuyển khoản"
+            } else {
+                "Đã mở liên kết VietQR"
+            },
             style = MaterialTheme.typography.titleMedium,
             color = Color.White,
             textAlign = TextAlign.Center,
         )
         Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = when {
-                clipboardPersistent -> "Clipboard không tự xoá"
-                clipboardRemaining > 0 -> "Clipboard tự xoá sau ${clipboardRemaining}s"
-                else -> "Clipboard đã được xoá"
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.75f),
-            textAlign = TextAlign.Center,
-        )
-        reminder?.let { text ->
-            Spacer(modifier = Modifier.height(8.dp))
+        if (showClipboard) {
             Text(
-                text = text,
+                text = when {
+                    clipboardPersistent -> "Clipboard không tự xoá"
+                    clipboardRemaining > 0 -> "Clipboard tự xoá sau ${clipboardRemaining}s"
+                    else -> "Clipboard đã được xoá"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.75f),
+                textAlign = TextAlign.Center,
+            )
+            reminder?.let { text ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.75f),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        } else {
+            Text(
+                text = "Hoàn tất chuyển khoản trong MB Bank, " +
+                    "sau đó quay lại để quét mã khác.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.75f),
                 textAlign = TextAlign.Center,
             )
         }
         Spacer(modifier = Modifier.height(24.dp))
-        onOpen?.let { open ->
-            FilledTonalButton(onClick = open) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_open_in_new),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(openLabel)
+        if (showClipboard) {
+            onOpen?.let { open ->
+                FilledTonalButton(onClick = open) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_open_in_new),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(openLabel)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
             }
-            Spacer(modifier = Modifier.height(12.dp))
         }
         Button(onClick = onScanAgain) {
             Icon(

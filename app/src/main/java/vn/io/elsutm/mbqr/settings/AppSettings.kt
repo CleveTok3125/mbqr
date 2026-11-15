@@ -43,6 +43,9 @@ object AppSettings {
     private const val ADVANCED_COPY_ENABLED = "advanced_copy_enabled"
     private const val SANITIZE_RESULTS = "sanitize_results"
     private const val HAPTICS_ENABLED = "haptics_enabled"
+    private const val PREFER_VIETQR_LINK = "prefer_vietqr_link"
+    private const val LINK_BROWSER_MODE = "link_browser_mode"
+    private const val BROWSER_PACKAGE = "browser_package"
     private const val SCAN_FRAME_STYLE = "scan_frame_style"
     private const val SCAN_BOUNDARY_STYLE = "scan_boundary_style"
     private const val ANALYSIS_FPS = "analysis_fps"
@@ -55,6 +58,8 @@ object AppSettings {
     private const val DEFAULT_ADVANCED_COPY_ENABLED = false
     private const val DEFAULT_SANITIZE_RESULTS = true
     private const val DEFAULT_HAPTICS_ENABLED = true
+    private const val DEFAULT_PREFER_VIETQR_LINK = true
+    private const val DEFAULT_LINK_BROWSER_MODE = "CUSTOM_TAB"
     private const val DEFAULT_SCAN_FRAME_STYLE = "ROUNDED"
     private const val DEFAULT_SCAN_BOUNDARY_STYLE = "ROUNDED"
     private const val DEFAULT_CUSTOM_ANALYSIS_WIDTH = 1280
@@ -186,6 +191,35 @@ object AppSettings {
 
     fun setHapticsEnabled(context: Context, enabled: Boolean) {
         preferences(context).edit { putBoolean(HAPTICS_ENABLED, enabled) }
+    }
+
+    fun preferVietQrLink(context: Context): Boolean =
+        preferences(context).getBoolean(PREFER_VIETQR_LINK, DEFAULT_PREFER_VIETQR_LINK)
+
+    fun setPreferVietQrLink(context: Context, enabled: Boolean) {
+        preferences(context).edit { putBoolean(PREFER_VIETQR_LINK, enabled) }
+    }
+
+    fun linkBrowserMode(context: Context): LinkBrowserMode =
+        LinkBrowserMode.fromName(
+            preferences(context).getString(LINK_BROWSER_MODE, DEFAULT_LINK_BROWSER_MODE),
+        )
+
+    fun setLinkBrowserMode(context: Context, mode: LinkBrowserMode) {
+        preferences(context).edit { putString(LINK_BROWSER_MODE, mode.name) }
+    }
+
+    fun browserPackage(context: Context): String? =
+        preferences(context).getString(BROWSER_PACKAGE, null)?.takeIf { it.isNotBlank() }
+
+    fun setBrowserPackage(context: Context, packageName: String?) {
+        preferences(context).edit {
+            if (packageName.isNullOrBlank()) {
+                remove(BROWSER_PACKAGE)
+            } else {
+                putString(BROWSER_PACKAGE, packageName)
+            }
+        }
     }
 
     fun scanFrameStyle(context: Context): ScanFrameStyle =
@@ -338,6 +372,9 @@ object AppSettings {
         advancedCopyEnabled = DEFAULT_ADVANCED_COPY_ENABLED,
         sanitizeResults = DEFAULT_SANITIZE_RESULTS,
         hapticsEnabled = DEFAULT_HAPTICS_ENABLED,
+        preferVietQrLink = DEFAULT_PREFER_VIETQR_LINK,
+        linkBrowserMode = LinkBrowserMode.fromName(DEFAULT_LINK_BROWSER_MODE),
+        browserPackage = null,
         scanFrameStyle = ScanFrameStyle.fromName(DEFAULT_SCAN_FRAME_STYLE),
         scanBoundaryStyle = ScanBoundaryStyle.fromName(DEFAULT_SCAN_BOUNDARY_STYLE),
         analysisResolutionPreset = analysisResolutionPreset(

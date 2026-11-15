@@ -1,15 +1,16 @@
 # MBQR
 
-Android QR scanner that hands a VietQR transfer to the MB Bank app and parses
-common QR formats.
+Android QR scanner that hands a VietQR transfer to MB Bank or the VietQR pay
+page and parses common QR formats.
 
 ## What it does
 
 1. Scans a QR code from the camera, a full-resolution capture, a gallery image,
    or one image shared from another app.
-2. Builds `<bank> <account> <amount in thousands> [merchant name]` for VietQR.
-3. Shows the transfer sheet by default. Confirming copies the text and opens
-   `mbbank://?ad_dp=transfer`.
+2. Builds `<bank> <account> <amount in thousands> [merchant name]` for the
+   clipboard handoff and a VietQR pay link for the browser handoff.
+3. Shows the transfer sheet by default. Confirming either copies the text and
+   opens `mbbank://?ad_dp=transfer`, or opens the official VietQR pay link.
 4. Shows parsed details for Wi-Fi, contacts, email, phone, SMS, location, ISBN,
    and links.
 5. Clears the clipboard after the configured timer, or on task removal while the
@@ -35,6 +36,9 @@ guidance, and out-of-spec behaviour are in
 [QR symbol support](docs/qr-symbol-support.md).
 
 - VietQR with the NAPAS provider (`A000000727`).
+- A VietQR pay link needs a valid CRC, a supported bank and account, an amount,
+  and transfer content. A missing amount, content, or unusable bank code falls
+  back to the clipboard handoff.
 - Wi-Fi (`WIFI:`), vCard/MECARD/BIZCARD, email, phone, SMS/MMS, location, ISBN,
   and HTTP(S) links.
 - VND only; amounts below 5 VND are rejected.
@@ -121,7 +125,12 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
   khung**.
 - **Quét**: **Chỉ quét trong khung** (off by default).
 - **Tương tác**: **Rung** (default on).
-- **Tích hợp**: **Hỏi trước khi mở MB Bank** (default on).
+- **Tích hợp**: **Hỏi trước khi mở MB Bank** (default on). **Ưu tiên VietQR**
+  (default on) opens the VietQR pay link; a missing amount or content uses the
+  clipboard handoff. **Mở liên kết bằng** (`Tab mặc định` default, `Ứng dụng
+  trình duyệt`), and with `Ứng dụng trình duyệt` **Trình duyệt** (`Hỏi mỗi lần`
+  default, or an installed browser). Browser rows are active only with **Ưu tiên
+  VietQR**.
 - **Riêng tư**: masking (`Tắt` / `Nhẹ` / `Toàn bộ`, default `Tắt`) and clipboard
   expiry (`0` = off, otherwise `15–300s` in 15s steps, default `60`).
 - **Nâng cao**: **Lọc ký tự không an toàn** (default on), **Bật copy nâng cao**
@@ -176,12 +185,12 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 - See [Sensitive data masking](docs/sensitive-data-masking.md) for the field
   matrix.
 
-### MB handoff and clipboard
+### Clipboard handoff
 
 - Without MB Bank, the parsed sheet still offers copy, share, and scan again.
-- Confirmation is on by default. The clipboard is written before MB opens; a
-  non-zero timer starts then. With confirmation off, copy and MB open
-  immediately.
+- **Hỏi trước khi mở MB Bank** gates both handoffs and is on by default. The
+  clipboard is written before MB opens; a non-zero timer starts then. With
+  confirmation off, handoff starts right after scanning.
 - If MB does not foreground within 5 seconds, the paused screen offers **Mở MB
   Bank**; a second failure reopens the transfer sheet via **Mở xác nhận chuyển
   khoản**.
@@ -192,19 +201,46 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
   clears on expiry or task removal. After handoff, the camera stops and shows the
   countdown; **Quét mã khác** restarts scanning.
 
+### VietQR link
+
+- With **Ưu tiên VietQR** on, a supported transfer builds
+  `https://dl.vietqr.io/pay` with `app=mb`, `ba=<account>@<bank>`,
+  `am=<amount>`, `tn=<content>`, and `url=https://127.0.0.1:0/`; confirming
+  opens it through **Mở liên kết bằng**. The link omits `bn`; MB resolves the
+  recipient from `ba`. `am` is VND, not thousands.
+- The return `url` is a loopback no-op: nothing listens on it, no server is
+  contacted, and no third party is involved. The app registers no return scheme,
+  so it does not reopen automatically after payment; switch back to the app.
+- The sheet's primary action is **Mở liên kết VietQR**; copy and share use the
+  link. Nothing is copied to the clipboard and the MB hub does not open. The
+  paused screen shows **Đã mở liên kết VietQR** with no clipboard timer.
+- The link path requires MB Bank to be installed; without it the parsed sheet
+  remains available.
+- A missing amount, content, or usable bank code shows **Thiếu thông tin VietQR,
+  dùng Dán thông minh** and continues with the clipboard handoff.
+- A browser that cannot be opened, or a default browser without Custom Tabs in
+  **Tab mặc định** mode, shows an error and keeps the parsed sheet. There is no
+  clipboard fallback.
+
 ### Demo
 
-- Five taps on the version line in credits enable demo. It reflects clipboard
-  and confirmation settings and draws the frame boundary, but cases are not
-  filtered by the frame.
+- Five taps on the version line in credits enable demo. It reflects clipboard,
+  confirmation, and **Ưu tiên VietQR** settings and draws the frame boundary,
+  but cases are not filtered by the frame.
 - Cycles transfer, missing-MB, unsupported-bank, invalid-CRC, Wi-Fi, contact, and
   link cases. With confirmation off, handoff-ready cases show only a toast and
   actions are no-ops. **Quét tiếp**, swipe down, or back closes.
 
 ### Privacy
 
-- No internet permission, analytics, or background work beyond the clipboard
-  timer. Parsing is local; links open only on tap.
+- No internet permission: the app itself does not access the network, so parsing
+  is local and scanned HTTP(S) links open only on tap. There is no analytics or
+  background work beyond the clipboard timer.
+- **Ưu tiên VietQR** hands the transfer details to the browser configured under
+  **Mở liên kết bằng**, which loads the official VietQR pay page; that page may
+  show an ad, and the app neither intercepts nor hides it. The link's return
+  `url` is a loopback no-op, and the app contacts no server for it. The
+  clipboard handoff stays local.
 
 ## License
 
