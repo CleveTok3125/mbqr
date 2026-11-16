@@ -127,6 +127,7 @@ class AppSettingsTest {
     fun `defaults expose the documented values`() {
         val defaults = AppSettings.defaults()
         assertEquals(true, defaults.confirmBeforeOpeningMb)
+        assertEquals(true, defaults.allowScreenshots)
         assertEquals(60, defaults.clipboardExpirySeconds)
         assertEquals(false, defaults.scanInsideFrame)
         assertEquals(50, defaults.scanFrameMarginPercent)

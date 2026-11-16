@@ -27,12 +27,14 @@ object AppSettings {
 
     private const val PREFERENCES = "mbqr_settings"
     private const val CONFIRM_BEFORE_OPENING_MB = "confirm_before_opening_mb"
+    private const val ALLOW_SCREENSHOTS = "allow_screenshots"
     private const val CLIPBOARD_EXPIRY_SECONDS = "clipboard_expiry_seconds"
     private const val SCAN_INSIDE_FRAME = "scan_inside_frame"
     private const val SCAN_FRAME_MARGIN_PERCENT_KEY = "scan_frame_margin_percent"
     private const val SENSITIVE_MASKING_LEVEL = "sensitive_masking_level"
     private const val LEGACY_HIDE_SENSITIVE_FIELDS = "hide_sensitive_fields"
     private const val DEFAULT_CONFIRM_BEFORE_OPENING_MB = true
+    private const val DEFAULT_ALLOW_SCREENSHOTS = true
     private const val DEFAULT_SCAN_INSIDE_FRAME = false
     private const val LIVE_DECODE_PRESET = "live_decode_preset"
     private const val STILL_DECODE_PRESET = "still_decode_preset"
@@ -73,6 +75,13 @@ object AppSettings {
 
     fun setConfirmBeforeOpeningMb(context: Context, enabled: Boolean) {
         preferences(context).edit { putBoolean(CONFIRM_BEFORE_OPENING_MB, enabled) }
+    }
+
+    fun allowScreenshots(context: Context): Boolean =
+        preferences(context).getBoolean(ALLOW_SCREENSHOTS, DEFAULT_ALLOW_SCREENSHOTS)
+
+    fun setAllowScreenshots(context: Context, enabled: Boolean) {
+        preferences(context).edit { putBoolean(ALLOW_SCREENSHOTS, enabled) }
     }
 
     fun scanInsideFrame(context: Context): Boolean =
@@ -359,6 +368,7 @@ object AppSettings {
 
     fun defaults(): SettingsDefaults = SettingsDefaults(
         confirmBeforeOpeningMb = DEFAULT_CONFIRM_BEFORE_OPENING_MB,
+        allowScreenshots = DEFAULT_ALLOW_SCREENSHOTS,
         clipboardExpirySeconds = DEFAULT_CLIPBOARD_EXPIRY_SECONDS,
         scanInsideFrame = DEFAULT_SCAN_INSIDE_FRAME,
         scanFrameMarginPercent = DEFAULT_SCAN_FRAME_MARGIN_PERCENT,

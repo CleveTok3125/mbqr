@@ -3,6 +3,7 @@ package vn.io.elsutm.mbqr
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -11,6 +12,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import vn.io.elsutm.mbqr.handoff.SharedImageIntent
+import vn.io.elsutm.mbqr.settings.AppSettings
 import vn.io.elsutm.mbqr.ui.ScannerScreen
 import vn.io.elsutm.mbqr.ui.theme.MbqrTheme
 
@@ -23,6 +25,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        if (!AppSettings.allowScreenshots(this)) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
 
         lastHandledShareUri = savedInstanceState?.getString(KEY_LAST_SHARE_URI)
         val initialUri = SharedImageIntent.extract(intent)

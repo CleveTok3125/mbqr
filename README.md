@@ -131,8 +131,9 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
   trình duyệt`), and with `Ứng dụng trình duyệt` **Trình duyệt** (`Hỏi mỗi lần`
   default, or an installed browser). Browser rows are active only with **Ưu tiên
   VietQR**.
-- **Riêng tư**: masking (`Tắt` / `Nhẹ` / `Toàn bộ`, default `Tắt`) and clipboard
-  expiry (`0` = off, otherwise `15–300s` in 15s steps, default `60`).
+- **Riêng tư**: **Cho phép chụp màn hình** (default on), masking (`Tắt` / `Nhẹ` /
+  `Toàn bộ`, default `Tắt`), and clipboard expiry (`0` = off, otherwise
+  `15–300s` in 15s steps, default `60`).
 - **Nâng cao**: **Lọc ký tự không an toàn** (default on), **Bật copy nâng cao**
   (default off, adds **Hex** / **Base64** actions), **Hiện thông tin xử lý**
   (decode overlay, default off), **Quét trực tiếp** (decoding, resolution, frame
@@ -236,6 +237,10 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
 - No internet permission: the app itself does not access the network, so parsing
   is local and scanned HTTP(S) links open only on tap. There is no analytics or
   background work beyond the clipboard timer.
+- Turning off **Cho phép chụp màn hình** sets Android `FLAG_SECURE` on the app
+  window, so screenshots and screen recording are blocked and the recent-apps
+  thumbnail may be blank. Turning it on clears the flag. The setting is
+  persisted and applies immediately, including to settings sheets and dialogs.
 - **Ưu tiên VietQR** hands the transfer details to the browser configured under
   **Mở liên kết bằng**, which loads the official VietQR pay page; that page may
   show an ad, and the app neither intercepts nor hides it. The link's return

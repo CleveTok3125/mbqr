@@ -3,6 +3,7 @@ package vn.io.elsutm.mbqr.settings
 /** Factory values used by the settings screen reset actions. */
 data class SettingsDefaults(
     val confirmBeforeOpeningMb: Boolean,
+    val allowScreenshots: Boolean,
     val clipboardExpirySeconds: Int,
     val scanInsideFrame: Boolean,
     val scanFrameMarginPercent: Int,

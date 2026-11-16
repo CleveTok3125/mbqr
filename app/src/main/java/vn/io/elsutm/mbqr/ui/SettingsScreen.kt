@@ -88,6 +88,7 @@ import vn.io.elsutm.mbqr.settings.SettingsDefaults
 /** Current settings values rendered by [SettingsScreen]. */
 internal data class SettingsSnapshot(
     val confirmBeforeOpeningMb: Boolean,
+    val allowScreenshots: Boolean,
     val clipboardExpirySeconds: Int,
     val scanInsideFrame: Boolean,
     val scanFrameMarginPercent: Int,
@@ -114,6 +115,7 @@ internal data class SettingsSnapshot(
 /** User edits emitted by [SettingsScreen]. */
 internal sealed interface SettingsChange {
     data class ConfirmBeforeOpeningMb(val value: Boolean) : SettingsChange
+    data class AllowScreenshots(val value: Boolean) : SettingsChange
     data class ClipboardExpirySeconds(val value: Int) : SettingsChange
     data object CommitClipboardExpiry : SettingsChange
     data class ScanInsideFrame(val value: Boolean) : SettingsChange
@@ -435,6 +437,19 @@ internal fun SettingsScreen(
                     expanded = privacySectionExpanded,
                     onExpandChange = { privacySectionExpanded = it },
                 ) {
+                    ToggleSetting(
+                        title = "Cho phép chụp màn hình",
+                        checked = values.allowScreenshots,
+                        resetVisible = values.allowScreenshots != defaults.allowScreenshots,
+                        onReset = {
+                            onValueChange(
+                                SettingsChange.AllowScreenshots(defaults.allowScreenshots),
+                            )
+                        },
+                        onCheckedChange = {
+                            onValueChange(SettingsChange.AllowScreenshots(it))
+                        },
+                    )
                     ChoiceSetting(
                         title = "Ẩn dữ liệu nhạy cảm",
                         options = listOf(

@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -216,6 +217,9 @@ fun ScannerScreen(
     var advancedCopyEnabled by remember { mutableStateOf(AppSettings.advancedCopyEnabled(context)) }
     var sanitizeResults by remember { mutableStateOf(AppSettings.sanitizeResults(context)) }
     var hapticsEnabled by remember { mutableStateOf(AppSettings.hapticsEnabled(context)) }
+    var allowScreenshots by remember {
+        mutableStateOf(AppSettings.allowScreenshots(context))
+    }
     var scanFrameStyle by remember { mutableStateOf(AppSettings.scanFrameStyle(context)) }
     var scanBoundaryStyle by remember { mutableStateOf(AppSettings.scanBoundaryStyle(context)) }
     var analysisFpsPreset by remember {
@@ -330,6 +334,17 @@ fun ScannerScreen(
     }
 
     val activity = context.findActivity()
+    DisposableEffect(activity, allowScreenshots) {
+        val window = activity?.window
+        if (window != null) {
+            if (allowScreenshots) {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+        onDispose { }
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(demoMode, activity) {
         val window = activity?.window
@@ -429,6 +444,10 @@ fun ScannerScreen(
                 confirmBeforeOpeningMb = change.value
                 AppSettings.setConfirmBeforeOpeningMb(context, change.value)
             }
+            is SettingsChange.AllowScreenshots -> {
+                allowScreenshots = change.value
+                AppSettings.setAllowScreenshots(context, change.value)
+            }
             is SettingsChange.ClipboardExpirySeconds -> clipboardExpirySeconds = change.value
             SettingsChange.CommitClipboardExpiry -> commitClipboardExpiry(clipboardExpirySeconds)
             is SettingsChange.ScanInsideFrame -> {
@@ -503,6 +522,7 @@ fun ScannerScreen(
         val defaults = AppSettings.defaults()
         listOf(
             SettingsChange.ConfirmBeforeOpeningMb(defaults.confirmBeforeOpeningMb),
+            SettingsChange.AllowScreenshots(defaults.allowScreenshots),
             SettingsChange.ClipboardExpirySeconds(defaults.clipboardExpirySeconds),
             SettingsChange.CommitClipboardExpiry,
             SettingsChange.ScanInsideFrame(defaults.scanInsideFrame),
@@ -1059,6 +1079,7 @@ fun ScannerScreen(
                 SettingsScreen(
                     values = SettingsSnapshot(
                         confirmBeforeOpeningMb = confirmBeforeOpeningMb,
+                        allowScreenshots = allowScreenshots,
                         clipboardExpirySeconds = clipboardExpirySeconds,
                         scanInsideFrame = scanInsideFrame,
                         scanFrameMarginPercent = scanFrameMarginPercent,
