@@ -115,6 +115,15 @@ class AppSettingsTest {
     }
 
     @Test
+    fun `maps controls placement names with a right fallback`() {
+        assertEquals(ControlsPlacement.RIGHT, ControlsPlacement.fromName(null))
+        assertEquals(ControlsPlacement.RIGHT, ControlsPlacement.fromName("UNKNOWN"))
+        assertEquals(ControlsPlacement.RIGHT, ControlsPlacement.fromName("BOTH"))
+        assertEquals(ControlsPlacement.BOTTOM, ControlsPlacement.fromName("BOTTOM"))
+        assertEquals(ControlsPlacement.LEFT, ControlsPlacement.fromName("LEFT"))
+    }
+
+    @Test
     fun `clamps masking level to the supported range`() {
         assertEquals(AppSettings.MASKING_OFF, AppSettings.boundedMaskingLevel(-1))
         assertEquals(AppSettings.MASKING_OFF, AppSettings.boundedMaskingLevel(0))
@@ -142,6 +151,7 @@ class AppSettingsTest {
         assertEquals(true, defaults.hapticsEnabled)
         assertEquals(ScanFrameStyle.ROUNDED, defaults.scanFrameStyle)
         assertEquals(ScanBoundaryStyle.ROUNDED, defaults.scanBoundaryStyle)
+        assertEquals(ControlsPlacement.RIGHT, defaults.controlsPlacement)
         assertEquals(true, defaults.preferVietQrLink)
         assertEquals(LinkBrowserMode.CUSTOM_TAB, defaults.linkBrowserMode)
         assertNull(defaults.browserPackage)

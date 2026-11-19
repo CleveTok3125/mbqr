@@ -16,6 +16,7 @@ data class SettingsDefaults(
     val hapticsEnabled: Boolean,
     val scanFrameStyle: ScanFrameStyle,
     val scanBoundaryStyle: ScanBoundaryStyle,
+    val controlsPlacement: ControlsPlacement,
     val analysisResolutionPreset: AnalysisResolutionPreset,
     val analysisFpsPreset: AnalysisFpsPreset,
     val preferVietQrLink: Boolean,

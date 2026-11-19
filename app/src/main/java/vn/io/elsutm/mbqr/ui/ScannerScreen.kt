@@ -13,6 +13,7 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
 import androidx.camera.core.Camera
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -20,6 +21,7 @@ import androidx.camera.core.ImageProxy
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +41,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -87,8 +90,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -96,6 +101,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -130,6 +136,7 @@ import vn.io.elsutm.mbqr.settings.AnalysisFpsPreset
 import vn.io.elsutm.mbqr.settings.AnalysisResolutionPreset
 import vn.io.elsutm.mbqr.settings.AnalysisSize
 import vn.io.elsutm.mbqr.settings.AppSettings
+import vn.io.elsutm.mbqr.settings.ControlsPlacement
 import vn.io.elsutm.mbqr.settings.QrDecodePreset
 import vn.io.elsutm.mbqr.settings.ScanBoundaryStyle
 import vn.io.elsutm.mbqr.settings.ScanFrameStyle
@@ -222,6 +229,9 @@ fun ScannerScreen(
     }
     var scanFrameStyle by remember { mutableStateOf(AppSettings.scanFrameStyle(context)) }
     var scanBoundaryStyle by remember { mutableStateOf(AppSettings.scanBoundaryStyle(context)) }
+    var controlsPlacement by remember {
+        mutableStateOf(AppSettings.controlsPlacement(context))
+    }
     var analysisFpsPreset by remember {
         mutableStateOf(AppSettings.analysisFpsPreset(context))
     }
@@ -346,12 +356,15 @@ fun ScannerScreen(
         onDispose { }
     }
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(demoMode, activity) {
+    val windowSize = LocalWindowInfo.current.containerSize
+    val isLandscape = windowSize.width > windowSize.height
+    val hideStatusBar = demoMode || (isLandscape && !showSettings)
+    DisposableEffect(hideStatusBar, activity) {
         val window = activity?.window
         val controller = window?.let {
             WindowCompat.getInsetsController(it, it.decorView)
         }
-        if (demoMode) {
+        if (hideStatusBar) {
             controller?.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller?.hide(WindowInsetsCompat.Type.statusBars())
@@ -495,6 +508,10 @@ fun ScannerScreen(
                 scanBoundaryStyle = change.value
                 AppSettings.setScanBoundaryStyle(context, change.value)
             }
+            is SettingsChange.Placement -> {
+                controlsPlacement = change.value
+                AppSettings.setControlsPlacement(context, change.value)
+            }
             is SettingsChange.ResolutionPreset -> {
                 analysisResolutionPreset = change.value
                 AppSettings.setAnalysisResolutionPreset(context, change.value)
@@ -537,6 +554,7 @@ fun ScannerScreen(
             SettingsChange.HapticsEnabled(defaults.hapticsEnabled),
             SettingsChange.FrameStyle(defaults.scanFrameStyle),
             SettingsChange.BoundaryStyle(defaults.scanBoundaryStyle),
+            SettingsChange.Placement(defaults.controlsPlacement),
             SettingsChange.ResolutionPreset(defaults.analysisResolutionPreset),
             SettingsChange.FpsPreset(defaults.analysisFpsPreset),
             SettingsChange.PreferVietQrLink(defaults.preferVietQrLink),
@@ -908,16 +926,46 @@ fun ScannerScreen(
                             .asPaddingValues()
                             .calculateBottomPadding()
                         val topBarHeight = statusTop + 64.dp
-                        val controlsHeight = if (camera != null || demoMode) 190.dp else 0.dp
+                        val placement = if (isLandscape) {
+                            controlsPlacement
+                        } else {
+                            ControlsPlacement.BOTTOM
+                        }
+                        val sideControls = placement != ControlsPlacement.BOTTOM
+                        // Side controls clear the widest system inset on either
+                        // side, and use the same inset on both sides.
+                        val sideInset = if (sideControls) {
+                            val insets = WindowInsets.safeDrawing
+                            val density = LocalDensity.current
+                            val left = insets.getLeft(density, LayoutDirection.Ltr)
+                            val right = insets.getRight(density, LayoutDirection.Ltr)
+                            with(density) { maxOf(left, right).toDp() } + 8.dp
+                        } else {
+                            0.dp
+                        }
+                        val controlsHeight = if (
+                            !sideControls && (camera != null || demoMode)
+                        ) {
+                            190.dp
+                        } else {
+                            0.dp
+                        }
                         val bottom = maxHeight - navigationBottom
-                        val availableHeight = (bottom - topBarHeight - controlsHeight)
+                        // Side mode drops the top bar, so the frame can use the
+                        // freed height instead of the portrait top-bar inset.
+                        val frameTopInset = if (sideControls) statusTop else topBarHeight
+                        val availableHeight = (bottom - frameTopInset - controlsHeight)
                             .coerceAtLeast(120.dp)
                         val frameSize = minOf(
                             maxWidth * 0.72f,
                             260.dp,
                             availableHeight * 0.55f,
                         ).coerceAtLeast(140.dp)
-                        val frameCenterY = maxHeight / 2f - maxHeight * 0.05f
+                        val frameCenterY = if (sideControls) {
+                            maxHeight / 2f
+                        } else {
+                            maxHeight / 2f - maxHeight * 0.05f
+                        }
                         val frameBottom = frameCenterY + frameSize / 2f
                         val availableBelowFrame = (bottom - frameBottom).coerceAtLeast(0.dp)
                         val controlsMargin = ((availableBelowFrame - 190.dp) / 2f)
@@ -988,6 +1036,61 @@ fun ScannerScreen(
                             }
                         }
 
+                        if (camera != null || demoMode) {
+                            val dialMin = if (demoMode) {
+                                1f
+                            } else {
+                                maxOf(1f, zoomMin).coerceAtMost(zoomMax)
+                            }
+                            val dialMax = if (demoMode) 25f else zoomMax.coerceAtLeast(dialMin)
+                            val dialRatio = zoomRatio.coerceIn(dialMin, dialMax)
+
+                            CameraControls(
+                                placement = placement,
+                                modifier = when {
+                                    !sideControls -> Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .navigationBarsPadding()
+                                        .padding(bottom = controlsMargin)
+
+                                    placement == ControlsPlacement.LEFT -> Modifier
+                                        .align(PhysicalCenterLeft)
+                                        .padding(horizontal = sideInset)
+
+                                    else -> Modifier
+                                        .align(PhysicalCenterRight)
+                                        .padding(horizontal = sideInset)
+                                },
+                                zoomRatio = dialRatio,
+                                minZoom = dialMin,
+                                maxZoom = dialMax,
+                                isCapturing = isCapturing,
+                                showCapture = if (demoMode) true else imageCapture != null,
+                                hapticsEnabled = hapticsEnabled,
+                                onZoomChange = { ratio ->
+                                    zoomRatio = ratio
+                                    if (!demoMode) {
+                                        camera?.cameraControl?.setZoomRatio(ratio)
+                                    }
+                                },
+                                onCapture = {
+                                    if (demoMode) {
+                                        showNextDemoCase()
+                                    } else {
+                                        capturePhoto()
+                                    }
+                                },
+                            )
+                        }
+
+                        val pickImage: () -> Unit = {
+                            if (demoMode) {
+                                showNextDemoCase()
+                            } else {
+                                imagePicker.launch("image/*")
+                            }
+                        }
+
                         ScannerOverlay(
                             torchOn = torchOn,
                             onToggleTorch = { torchOn = !torchOn },
@@ -1019,56 +1122,46 @@ fun ScannerScreen(
                                 null
                             },
                             frameSize = frameSize,
-                            frameOffsetY = -maxHeight * 0.05f,
+                            frameOffsetY = frameCenterY - maxHeight / 2f,
                             frameStyle = scanFrameStyle,
                             boundaryStyle = scanBoundaryStyle,
                             scanCrop = scanCrop,
                             showTorch = true,
                             showImage = true,
-                            onPickImage = {
-                                if (demoMode) {
-                                    showNextDemoCase()
-                                } else {
-                                    imagePicker.launch("image/*")
-                                }
-                            },
+                            onPickImage = pickImage,
                             onShowSettings = { showSettings = true },
                             pipelineStatus = pipelineStatus,
+                            sideMode = sideControls,
                         )
 
-                        if (camera != null || demoMode) {
-                            val dialMin = if (demoMode) {
-                                1f
-                            } else {
-                                maxOf(1f, zoomMin).coerceAtMost(zoomMax)
-                            }
-                            val dialMax = if (demoMode) 25f else zoomMax.coerceAtLeast(dialMin)
-                            val dialRatio = zoomRatio.coerceIn(dialMin, dialMax)
-
-                            CameraControls(
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .navigationBarsPadding()
-                                    .padding(bottom = controlsMargin),
-                                zoomRatio = dialRatio,
-                                minZoom = dialMin,
-                                maxZoom = dialMax,
-                                isCapturing = isCapturing,
-                                showCapture = if (demoMode) true else imageCapture != null,
-                                hapticsEnabled = hapticsEnabled,
-                                onZoomChange = { ratio ->
-                                    zoomRatio = ratio
-                                    if (!demoMode) {
-                                        camera?.cameraControl?.setZoomRatio(ratio)
-                                    }
-                                },
-                                onCapture = {
-                                    if (demoMode) {
-                                        showNextDemoCase()
+                        if (sideControls) {
+                            SideActionBar(
+                                torchOn = torchOn,
+                                showTorch = true,
+                                showImage = true,
+                                placement = placement,
+                                onToggleTorch = { torchOn = !torchOn },
+                                onPickImage = pickImage,
+                                onShowSettings = { showSettings = true },
+                                onSwapSide = {
+                                    val next = if (placement == ControlsPlacement.LEFT) {
+                                        ControlsPlacement.RIGHT
                                     } else {
-                                        capturePhoto()
+                                        ControlsPlacement.LEFT
                                     }
+                                    controlsPlacement = next
+                                    AppSettings.setControlsPlacement(context, next)
+                                    haptic()
                                 },
+                                modifier = Modifier
+                                    .align(
+                                        if (placement == ControlsPlacement.LEFT) {
+                                            PhysicalCenterRight
+                                        } else {
+                                            PhysicalCenterLeft
+                                        },
+                                    )
+                                    .padding(horizontal = sideInset),
                             )
                         }
                     }
@@ -1092,6 +1185,7 @@ fun ScannerScreen(
                         hapticsEnabled = hapticsEnabled,
                         scanFrameStyle = scanFrameStyle,
                         scanBoundaryStyle = scanBoundaryStyle,
+                        controlsPlacement = controlsPlacement,
                         analysisResolutionPreset = analysisResolutionPreset,
                         customAnalysisSize = customAnalysisSize,
                         analysisFpsPreset = analysisFpsPreset,
@@ -2042,6 +2136,7 @@ private fun ScannerOverlay(
     onPickImage: () -> Unit,
     onShowSettings: () -> Unit,
     pipelineStatus: QrPipelineStatus? = null,
+    sideMode: Boolean = false,
 ) {
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val clipboardLabel = when {
@@ -2094,125 +2189,285 @@ private fun ScannerOverlay(
                 .background(Color.Black.copy(alpha = 0.45f)),
         )
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+        if (sideMode) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(top = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilledTonalButton(
-                    onClick = onShowSettings,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = Color.Black.copy(alpha = 0.45f),
-                        contentColor = Color.White,
-                    ),
-                    contentPadding = PaddingValues(horizontal = 14.dp),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_settings),
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
+                clipboardLabel?.let { label ->
+                    ClipboardPill(
+                        label = label,
+                        onRestore = onRestoreClipboard,
+                        onClear = onClearClipboard,
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Cài đặt")
                 }
 
-                if (showTorch) {
-                    FilledTonalButton(
-                        onClick = onToggleTorch,
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = if (torchOn) {
-                                TorchOnContainer
-                            } else {
-                                Color.Black.copy(alpha = 0.45f)
-                            },
-                            contentColor = if (torchOn) TorchOnContent else Color.White,
-                        ),
-                        contentPadding = PaddingValues(horizontal = 12.dp),
-                    ) {
-                        Icon(
-                            painter = painterResource(
-                                if (torchOn) R.drawable.ic_flash_off else R.drawable.ic_flash_on,
-                            ),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = if (torchOn) "Tắt đèn" else "Bật đèn")
-                    }
+                pipelineStatus?.takeIf { it.active }?.let { status ->
+                    PipelineStatusPill(status)
                 }
             }
-
-            if (showImage || clipboardLabel != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    clipboardLabel?.let { label ->
-                        Text(
-                            text = label,
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .background(
-                                    color = Color.Black.copy(alpha = 0.45f),
-                                    shape = RoundedCornerShape(50),
-                                )
-                                .then(
-                                    if (onRestoreClipboard != null || onClearClipboard != null) {
-                                        Modifier.combinedClickable(
-                                            onClick = { onRestoreClipboard?.invoke() },
-                                            onLongClick = { onClearClipboard?.invoke() },
-                                        )
-                                    } else {
-                                        Modifier
-                                    },
-                                )
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                        )
-                    }
+                    SettingsPill(onClick = onShowSettings)
 
-                    if (showImage) {
-                        FilledTonalButton(
-                            onClick = onPickImage,
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .size(48.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = Color.Black.copy(alpha = 0.45f),
-                                contentColor = Color.White,
-                            ),
-                            contentPadding = PaddingValues(0.dp),
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_image),
-                                contentDescription = "Quét ảnh",
-                                modifier = Modifier.size(22.dp),
+                    if (showTorch) {
+                        TorchPill(torchOn = torchOn, onToggle = onToggleTorch)
+                    }
+                }
+
+                if (showImage || clipboardLabel != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                    ) {
+                        clipboardLabel?.let { label ->
+                            ClipboardPill(
+                                label = label,
+                                onRestore = onRestoreClipboard,
+                                onClear = onClearClipboard,
+                                modifier = Modifier.align(Alignment.Center),
+                            )
+                        }
+
+                        if (showImage) {
+                            ImageAction(
+                                onClick = onPickImage,
+                                modifier = Modifier.align(Alignment.CenterEnd),
                             )
                         }
                     }
                 }
-            }
 
-            pipelineStatus?.takeIf { it.active }?.let { status ->
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    PipelineStatusPill(status)
+                pipelineStatus?.takeIf { it.active }?.let { status ->
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        PipelineStatusPill(status)
+                    }
                 }
             }
         }
 
     }
+}
+
+@Composable
+private fun SideActionBar(
+    torchOn: Boolean,
+    showTorch: Boolean,
+    showImage: Boolean,
+    placement: ControlsPlacement,
+    onToggleTorch: () -> Unit,
+    onPickImage: () -> Unit,
+    onShowSettings: () -> Unit,
+    onSwapSide: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .background(
+                color = Color.Black.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(percent = 50),
+            )
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(percent = 50),
+            )
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        DockIconButton(
+            iconRes = R.drawable.ic_settings,
+            contentDescription = "Cài đặt",
+            onClick = onShowSettings,
+        )
+        if (showTorch) {
+            DockIconButton(
+                iconRes = if (torchOn) {
+                    R.drawable.ic_flash_off
+                } else {
+                    R.drawable.ic_flash_on
+                },
+                contentDescription = if (torchOn) "Tắt đèn" else "Bật đèn",
+                containerColor = if (torchOn) TorchOnContainer else DockButtonContainer,
+                contentColor = if (torchOn) TorchOnContent else Color.White,
+                onClick = onToggleTorch,
+            )
+        }
+        if (showImage) {
+            DockIconButton(
+                iconRes = R.drawable.ic_image,
+                contentDescription = "Quét ảnh",
+                onClick = onPickImage,
+            )
+        }
+        DockIconButton(
+            iconRes = if (placement == ControlsPlacement.LEFT) {
+                R.drawable.ic_arrow_forward
+            } else {
+                R.drawable.ic_arrow_back
+            },
+            contentDescription = if (placement == ControlsPlacement.LEFT) {
+                "Chuyển nút chụp sang bên phải"
+            } else {
+                "Chuyển nút chụp sang bên trái"
+            },
+            onClick = onSwapSide,
+        )
+    }
+}
+
+@Composable
+private fun DockIconButton(
+    @DrawableRes iconRes: Int,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    containerColor: Color = DockButtonContainer,
+    contentColor: Color = Color.White,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier.size(48.dp),
+        shape = CircleShape,
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+        ),
+        contentPadding = PaddingValues(0.dp),
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
+            modifier = Modifier.size(22.dp),
+        )
+    }
+}
+
+@Composable
+private fun SettingsPill(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier,
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = Color.Black.copy(alpha = 0.45f),
+            contentColor = Color.White,
+        ),
+        contentPadding = PaddingValues(horizontal = 14.dp),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_settings),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text("Cài đặt")
+    }
+}
+
+@Composable
+private fun TorchPill(
+    torchOn: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilledTonalButton(
+        onClick = onToggle,
+        modifier = modifier,
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = if (torchOn) {
+                TorchOnContainer
+            } else {
+                Color.Black.copy(alpha = 0.45f)
+            },
+            contentColor = if (torchOn) TorchOnContent else Color.White,
+        ),
+        contentPadding = PaddingValues(horizontal = 12.dp),
+    ) {
+        Icon(
+            painter = painterResource(
+                if (torchOn) R.drawable.ic_flash_off else R.drawable.ic_flash_on,
+            ),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(text = if (torchOn) "Tắt đèn" else "Bật đèn")
+    }
+}
+
+@Composable
+private fun ImageAction(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = modifier.size(48.dp),
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = Color.Black.copy(alpha = 0.45f),
+            contentColor = Color.White,
+        ),
+        contentPadding = PaddingValues(0.dp),
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_image),
+            contentDescription = "Quét ảnh",
+            modifier = Modifier.size(22.dp),
+        )
+    }
+}
+
+@Composable
+private fun ClipboardPill(
+    label: String,
+    onRestore: (() -> Unit)?,
+    onClear: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = label,
+        color = Color.White,
+        style = MaterialTheme.typography.labelMedium,
+        modifier = modifier
+            .background(
+                color = Color.Black.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(50),
+            )
+            .then(
+                if (onRestore != null || onClear != null) {
+                    Modifier.combinedClickable(
+                        onClick = { onRestore?.invoke() },
+                        onLongClick = { onClear?.invoke() },
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
 }
 
 @Composable
@@ -2430,6 +2685,7 @@ private fun decodeCapturedImage(
 
 private val TorchOnContainer = Color(0xFFFFC107)
 private val TorchOnContent = Color(0xFF1B1B1B)
+private val DockButtonContainer = Color.White.copy(alpha = 0.10f)
 
 private fun hasCameraPermission(context: android.content.Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==

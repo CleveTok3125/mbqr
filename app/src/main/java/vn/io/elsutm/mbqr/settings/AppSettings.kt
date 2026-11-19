@@ -50,6 +50,7 @@ object AppSettings {
     private const val BROWSER_PACKAGE = "browser_package"
     private const val SCAN_FRAME_STYLE = "scan_frame_style"
     private const val SCAN_BOUNDARY_STYLE = "scan_boundary_style"
+    private const val CONTROLS_PLACEMENT = "controls_placement"
     private const val ANALYSIS_FPS = "analysis_fps"
     private const val ANALYSIS_FPS_PRESET = "analysis_fps_preset"
     private const val CUSTOM_ANALYSIS_FPS = "custom_analysis_fps"
@@ -64,6 +65,7 @@ object AppSettings {
     private const val DEFAULT_LINK_BROWSER_MODE = "CUSTOM_TAB"
     private const val DEFAULT_SCAN_FRAME_STYLE = "ROUNDED"
     private const val DEFAULT_SCAN_BOUNDARY_STYLE = "ROUNDED"
+    private const val DEFAULT_CONTROLS_PLACEMENT = "RIGHT"
     private const val DEFAULT_CUSTOM_ANALYSIS_WIDTH = 1280
     private const val DEFAULT_CUSTOM_ANALYSIS_HEIGHT = 720
 
@@ -249,6 +251,15 @@ object AppSettings {
         preferences(context).edit { putString(SCAN_BOUNDARY_STYLE, style.name) }
     }
 
+    fun controlsPlacement(context: Context): ControlsPlacement =
+        ControlsPlacement.fromName(
+            preferences(context).getString(CONTROLS_PLACEMENT, DEFAULT_CONTROLS_PLACEMENT),
+        )
+
+    fun setControlsPlacement(context: Context, placement: ControlsPlacement) {
+        preferences(context).edit { putString(CONTROLS_PLACEMENT, placement.name) }
+    }
+
     fun analysisFpsPreset(context: Context): AnalysisFpsPreset {
         val prefs = preferences(context)
         val legacyFps = prefs.getInt(ANALYSIS_FPS, DEFAULT_ANALYSIS_FPS)
@@ -387,6 +398,7 @@ object AppSettings {
         browserPackage = null,
         scanFrameStyle = ScanFrameStyle.fromName(DEFAULT_SCAN_FRAME_STYLE),
         scanBoundaryStyle = ScanBoundaryStyle.fromName(DEFAULT_SCAN_BOUNDARY_STYLE),
+        controlsPlacement = ControlsPlacement.fromName(DEFAULT_CONTROLS_PLACEMENT),
         analysisResolutionPreset = analysisResolutionPreset(
             DEFAULT_ANALYSIS_RESOLUTION_PRESET,
         ),

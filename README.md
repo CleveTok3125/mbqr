@@ -124,7 +124,11 @@ Required repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`,
   outline (`Bo góc` default, `Vuông`). Margin controls need **Chỉ quét trong
   khung**.
 - **Quét**: **Chỉ quét trong khung** (off by default).
-- **Tương tác**: **Rung** (default on).
+- **Tương tác**: **Rung** (default on). **Vị trí điều khiển khi xoay ngang**
+  (`Như dọc`, `Trái`, `Phải` default). `Như dọc` keeps the portrait layout. In
+  landscape the status bar is hidden; the actions and the side-swap control sit in
+  a vertical dock on the opposite edge, inset symmetrically from the screen sides.
+  The dock's swap arrow moves the capture controls between `Trái` and `Phải`.
 - **Tích hợp**: **Hỏi trước khi mở MB Bank** (default on). **Ưu tiên VietQR**
   (default on) opens the VietQR pay link; a missing amount or content uses the
   clipboard handoff. **Mở liên kết bằng** (`Tab mặc định` default, `Ứng dụng

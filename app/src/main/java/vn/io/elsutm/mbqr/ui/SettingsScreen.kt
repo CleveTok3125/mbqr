@@ -79,6 +79,7 @@ import vn.io.elsutm.mbqr.settings.AnalysisFpsPreset
 import vn.io.elsutm.mbqr.settings.AnalysisResolutionPreset
 import vn.io.elsutm.mbqr.settings.AnalysisSize
 import vn.io.elsutm.mbqr.settings.AppSettings
+import vn.io.elsutm.mbqr.settings.ControlsPlacement
 import vn.io.elsutm.mbqr.settings.LinkBrowserMode
 import vn.io.elsutm.mbqr.settings.QrDecodePreset
 import vn.io.elsutm.mbqr.settings.ScanBoundaryStyle
@@ -101,6 +102,7 @@ internal data class SettingsSnapshot(
     val hapticsEnabled: Boolean,
     val scanFrameStyle: ScanFrameStyle,
     val scanBoundaryStyle: ScanBoundaryStyle,
+    val controlsPlacement: ControlsPlacement,
     val analysisResolutionPreset: AnalysisResolutionPreset,
     val customAnalysisSize: AnalysisSize,
     val analysisFpsPreset: AnalysisFpsPreset,
@@ -130,6 +132,7 @@ internal sealed interface SettingsChange {
     data class HapticsEnabled(val value: Boolean) : SettingsChange
     data class FrameStyle(val value: ScanFrameStyle) : SettingsChange
     data class BoundaryStyle(val value: ScanBoundaryStyle) : SettingsChange
+    data class Placement(val value: ControlsPlacement) : SettingsChange
     data class ResolutionPreset(val value: AnalysisResolutionPreset) : SettingsChange
     data class FpsPreset(val value: AnalysisFpsPreset) : SettingsChange
     data class PreferVietQrLink(val value: Boolean) : SettingsChange
@@ -352,6 +355,21 @@ internal fun SettingsScreen(
                         },
                         onCheckedChange = {
                             onValueChange(SettingsChange.HapticsEnabled(it))
+                        },
+                    )
+                    ChoiceSetting(
+                        title = "Vị trí điều khiển khi xoay ngang",
+                        options = ControlsPlacement.entries,
+                        selected = values.controlsPlacement,
+                        label = { it.label() },
+                        resetVisible = values.controlsPlacement != defaults.controlsPlacement,
+                        onReset = {
+                            onValueChange(
+                                SettingsChange.Placement(defaults.controlsPlacement),
+                            )
+                        },
+                        onSelect = {
+                            onValueChange(SettingsChange.Placement(it))
                         },
                     )
                 }
@@ -1356,6 +1374,12 @@ internal fun ScanBoundaryStyle.label(): String = when (this) {
 internal fun LinkBrowserMode.label(): String = when (this) {
     LinkBrowserMode.CUSTOM_TAB -> "Tab mặc định"
     LinkBrowserMode.BROWSER_APP -> "Ứng dụng trình duyệt"
+}
+
+internal fun ControlsPlacement.label(): String = when (this) {
+    ControlsPlacement.BOTTOM -> "Như dọc"
+    ControlsPlacement.LEFT -> "Trái"
+    ControlsPlacement.RIGHT -> "Phải"
 }
 
 internal fun AnalysisSize.shortLabel(): String = "${height}p"
